@@ -1,6 +1,7 @@
 #include "Metadata.h"
 #include <QDirIterator>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -20,7 +21,13 @@ void Metadata::load(){
  for(const QString &root:{"/usr/share/applications","/usr/local/share/applications"}){
   QDirIterator it(root,{"*.desktop"},QDir::Files); while(it.hasNext()){
    QSettings f(it.next(),QSettings::IniFormat); f.beginGroup("Desktop Entry"); if(f.value("NoDisplay").toBool()||f.value("Hidden").toBool())continue;
-   const QStringList pkgs=f.value("X-Pacman-Package").toStringList(); if(pkgs.isEmpty())continue;
+   QStringList pkgs=f.value("X-Pacman-Package").toStringList();
+   // Arch desktop files rarely carry X-Pacman-Package. The unqualified
+   // desktop-file basename is a useful, truthful fallback when it matches a
+   // real repository package later during enrich() (firefox.desktop ->
+   // firefox, org.kde.krita.desktop remains only a harmless unmatched key).
+   const QString desktopId=QFileInfo(f.fileName()).completeBaseName();
+   if(!desktopId.isEmpty()&&!pkgs.contains(desktopId))pkgs<<desktopId;
    Entry e{f.value("Name").toString(),f.value("Comment").toString(),f.value("Comment").toString(),f.value("Icon").toString(),mapCategory(f.value("Categories").toString().split(';',Qt::SkipEmptyParts))}; for(const auto&p:pkgs)m_entries.insert(p,e);
   }
  }

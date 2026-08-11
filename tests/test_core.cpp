@@ -13,6 +13,6 @@ private slots:
  void search(){Package p;p.displayName="LibreOffice";p.name="libreoffice-fresh";p.summary="Office suite";QVERIFY(p.searchableText().contains("office"));}
  void deepLinks(){auto d=parseDeepLink({"app","--package","vlc"});QCOMPARE(d.page,DeepLink::PackageDetails);QCOMPARE(d.value,QString("vlc"));}
  void catalog(){QTemporaryDir d;QFile f(d.filePath("x.json"));QVERIFY(f.open(QIODevice::WriteOnly));f.write("[{\"package\":\"vlc\"},{\"package\":\"bad name\"},{\"package\":\"vlc\"}]");f.close();QString e;QCOMPARE(Metadata::loadFeatured(f.fileName(),&e),QStringList{"vlc"});}
- void badCatalog(){QTemporaryDir d;QFile f(d.filePath("x.json"));f.open(QIODevice::WriteOnly);f.write("nope");f.close();QString e;QVERIFY(Metadata::loadFeatured(f.fileName(),&e).isEmpty());QVERIFY(!e.isEmpty());}
+ void badCatalog(){QTemporaryDir d;QFile f(d.filePath("x.json"));QVERIFY(f.open(QIODevice::WriteOnly));f.write("nope");f.close();QString e;QVERIFY(Metadata::loadFeatured(f.fileName(),&e).isEmpty());QVERIFY(!e.isEmpty());}
 };QTEST_MAIN(CoreTest)
 #include "test_core.moc"
