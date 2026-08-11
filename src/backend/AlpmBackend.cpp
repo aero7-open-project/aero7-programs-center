@@ -3,14 +3,20 @@
 #include <QSet>
 
 AlpmBackend::AlpmBackend(QObject *parent):PackageBackend(parent) {
+    reopen();
+}
+bool AlpmBackend::reopen() {
+    if(m_handle){alpm_release(m_handle);m_handle=nullptr;}
+    m_error.clear();
     alpm_errno_t err;
     m_handle=alpm_initialize("/", "/var/lib/pacman", &err);
-    if (!m_handle) { m_error=QString::fromLocal8Bit(alpm_strerror(err)); return; }
+    if (!m_handle) { m_error=QString::fromLocal8Bit(alpm_strerror(err)); return false; }
     const QStringList repos={"core","extra","multilib","aero7"};
     for (const QString &repo:repos) {
         const QByteArray n=repo.toUtf8();
         alpm_register_syncdb(m_handle,n.constData(),ALPM_SIG_USE_DEFAULT);
     }
+    return true;
 }
 AlpmBackend::~AlpmBackend(){ if(m_handle) alpm_release(m_handle); }
 
@@ -31,7 +37,7 @@ Package AlpmBackend::fromPackage(alpm_pkg_t *p, alpm_db_t *db) const {
 }
 
 QList<Package> AlpmBackend::packages() {
-    QList<Package> out; if(!m_handle) return out;
+    QList<Package> out; if(!reopen()) return out;
     QSet<QString> installed;
     alpm_db_t *local=alpm_get_localdb(m_handle);
     for(alpm_list_t *i=alpm_db_get_pkgcache(local);i;i=i->next) installed.insert(QString::fromUtf8(alpm_pkg_get_name(static_cast<alpm_pkg_t*>(i->data))));
@@ -47,7 +53,7 @@ QList<Package> AlpmBackend::packages() {
 }
 
 QList<Package> AlpmBackend::updates(){
-    QList<Package> out; if(!m_handle)return out; alpm_db_t *local=alpm_get_localdb(m_handle);
+    QList<Package> out; if(!reopen())return out; alpm_db_t *local=alpm_get_localdb(m_handle);
     for(alpm_list_t *i=alpm_db_get_pkgcache(local);i;i=i->next){
         auto *lp=static_cast<alpm_pkg_t*>(i->data); auto *sp=alpm_sync_get_new_version(lp,alpm_get_syncdbs(m_handle)); if(!sp)continue;
         Package x=fromPackage(sp,alpm_pkg_get_db(sp)); x.installedVersion=QString::fromUtf8(alpm_pkg_get_version(lp)); x.state=PackageState::UpdateAvailable; out.push_back(x);

@@ -14,5 +14,6 @@ public:
 private:
     alpm_handle_t *m_handle=nullptr;
     QString m_error;
+    bool reopen();
     Package fromPackage(alpm_pkg_t *pkg, alpm_db_t *repo) const;
 };
