@@ -35,7 +35,7 @@ install(FILES packaging/aero7-programs-center.desktop DESTINATION share/applicat
 foreach(size 16 22 32 48 64 128 256)
   install(FILES resources/icons/${size}x${size}/aero7-programs-center.png DESTINATION share/icons/hicolor/${size}x${size}/apps)
 endforeach()
-install(FILES resources/icons/aero7-programs-center.svg DESTINATION share/icons/hicolor/scalable/apps)
+install(FILES resources/icons/aero7-programs-center.png DESTINATION share/icons/hicolor/512x512/apps)
 install(FILES catalog/featured.json DESTINATION share/aero7-programs-center/catalog)
 install(PROGRAMS helper/aero7-programs-center-helper DESTINATION lib/aero7-programs-center)
 install(FILES helper/org.aero7.programscenter.policy DESTINATION share/polkit-1/actions)

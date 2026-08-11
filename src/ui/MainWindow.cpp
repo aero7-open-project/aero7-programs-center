@@ -34,7 +34,7 @@ QLabel*heading(const QString&t){auto*l=new QLabel(t);l->setObjectName("sectionHe
 }
 
 MainWindow::MainWindow(const DeepLink&link,QWidget*p):QMainWindow(p),m_backend(this){
- setWindowTitle("Programs Center");setWindowIcon(QIcon(":/icons/aero7-programs-center.svg"));buildUi();loadData();
+ setWindowTitle("Programs Center");setWindowIcon(QIcon(":/icons/aero7-programs-center.png"));buildUi();loadData();
  QSettings s("Aero7","ProgramsCenter");restoreGeometry(s.value("geometry").toByteArray());if(width()<850)resize(1200,780);
  if(link.page==DeepLink::Updates)showUpdates();else if(link.page==DeepLink::Installed)showInstalled();else if(link.page==DeepLink::Search)showResults(link.value);else if(link.page==DeepLink::PackageDetails)showDetails(link.value);else if(link.page==DeepLink::Category)showResults({},link.value);else showHome();
 }
