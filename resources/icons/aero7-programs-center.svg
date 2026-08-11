@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="512" height="512" viewBox="0 0 512 512">
+ <defs>
+  <linearGradient id="basket" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#8fe8ff"/><stop offset=".48" stop-color="#20aadd"/><stop offset="1" stop-color="#0872ad"/></linearGradient>
+  <linearGradient id="rim"><stop stop-color="#d7f7ff"/><stop offset=".5" stop-color="#2cb5e9"/><stop offset="1" stop-color="#055f9c"/></linearGradient>
+  <linearGradient id="orange" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#ffd16a"/><stop offset=".48" stop-color="#f38a0b"/><stop offset="1" stop-color="#bd4e00"/></linearGradient>
+  <filter id="shadow"><feGaussianBlur stdDeviation="9"/></filter>
+ </defs>
+ <ellipse cx="256" cy="458" rx="190" ry="24" fill="#002d50" opacity=".3" filter="url(#shadow)"/>
+ <path d="M130 198C138 88 194 46 256 46s118 42 126 152" fill="none" stroke="#9a4200" stroke-width="34" stroke-linecap="round"/>
+ <path d="M130 198C138 88 194 46 256 46s118 42 126 152" fill="none" stroke="url(#orange)" stroke-width="23" stroke-linecap="round"/>
+ <path d="M77 183h358l-40 245c-4 25-24 42-49 42H166c-25 0-45-17-49-42z" fill="url(#basket)" stroke="#075c96" stroke-width="8"/>
+ <path d="M89 198h334l-7 43H96z" fill="url(#rim)" stroke="#075c96" stroke-width="5"/>
+ <path d="M119 258h274M112 310h287M105 362h301M99 414h313M162 241l20 219M225 241l7 228M287 241l-7 228M350 241l-20 219" opacity=".28" stroke="#fff" stroke-width="8"/>
+ <path d="M148 155l50-38 38 62-52 35z" fill="#ff9d0a" stroke="#a84a00" stroke-width="5"/><path d="M230 140h77v83h-77z" fill="#f4f7fb" stroke="#5a7a98" stroke-width="5"/><path d="M322 151l53 19-21 58-53-19z" fill="#7bdb4c" stroke="#34811b" stroke-width="5"/>
+ <circle cx="256" cy="346" r="76" fill="#f7fbff" stroke="#075c96" stroke-width="8"/>
+ <image x="190" y="280" width="132" height="132" xlink:href="aero7-emblem.png" preserveAspectRatio="xMidYMid meet"/>
+ <path d="M110 216h292" stroke="#fff" stroke-width="7" opacity=".72"/>
+</svg>
