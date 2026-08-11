@@ -1,0 +1,7 @@
+[
+  {"package":"firefox","featured":true,"priority":10},
+  {"package":"vlc","featured":true,"priority":20},
+  {"package":"libreoffice-fresh","featured":true,"priority":30},
+  {"package":"gimp","featured":true,"priority":40},
+  {"package":"krita","featured":true,"priority":50}
+]
