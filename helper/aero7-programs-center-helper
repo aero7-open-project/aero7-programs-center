@@ -6,9 +6,9 @@ set -euo pipefail
 action="${1:-}"; shift || true
 for package in "$@"; do [[ "$package" =~ ^[a-zA-Z0-9@._+:-]+$ ]] || { echo "Invalid package name." >&2; exit 64; }; done
 case "$action" in
-  install) [[ $# -gt 0 ]] || exit 64; exec /usr/bin/pacman --sync --needed -- "$@" ;;
-  remove) [[ $# -gt 0 ]] || exit 64; exec /usr/bin/pacman --remove -- "$@" ;;
+  install) [[ $# -gt 0 ]] || exit 64; exec /usr/bin/pacman --noconfirm --sync --needed -- "$@" ;;
+  remove) [[ $# -gt 0 ]] || exit 64; exec /usr/bin/pacman --noconfirm --remove -- "$@" ;;
   update-selected) echo "Arch Linux does not support partial upgrades. Use Update All." >&2; exit 64 ;;
-  update-all) [[ $# -eq 0 ]] || exit 64; exec /usr/bin/pacman --sync --refresh --sysupgrade ;;
+  update-all) [[ $# -eq 0 ]] || exit 64; exec /usr/bin/pacman --noconfirm --sync --refresh --sysupgrade ;;
   *) echo "Unsupported operation." >&2; exit 64 ;;
 esac
