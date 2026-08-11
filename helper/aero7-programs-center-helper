@@ -1,0 +1,14 @@
+#!/usr/bin/bash
+set -euo pipefail
+
+[[ "${PKEXEC_UID:-}" =~ ^[0-9]+$ ]] || { echo "This helper must be started by polkit." >&2; exit 77; }
+[[ ! -e /var/lib/pacman/db.lck ]] || { echo "Another package transaction is in progress." >&2; exit 75; }
+action="${1:-}"; shift || true
+for package in "$@"; do [[ "$package" =~ ^[a-zA-Z0-9@._+:-]+$ ]] || { echo "Invalid package name." >&2; exit 64; }; done
+case "$action" in
+  install) [[ $# -gt 0 ]] || exit 64; exec /usr/bin/pacman --sync --needed -- "$@" ;;
+  remove) [[ $# -gt 0 ]] || exit 64; exec /usr/bin/pacman --remove -- "$@" ;;
+  update-selected) echo "Arch Linux does not support partial upgrades. Use Update All." >&2; exit 64 ;;
+  update-all) [[ $# -eq 0 ]] || exit 64; exec /usr/bin/pacman --sync --refresh --sysupgrade ;;
+  *) echo "Unsupported operation." >&2; exit 64 ;;
+esac
