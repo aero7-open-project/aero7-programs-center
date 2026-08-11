@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Programs Center
+Comment=Discover, install, remove and update software
+Exec=aero7-programs-center
+Icon=aero7-programs-center
+Categories=System;PackageManager;Qt;
+Keywords=software;programs;install;update;packages;
+StartupNotify=true
