@@ -28,6 +28,12 @@ add_executable(aero7-programs-center
   src/ui/ProgramCard.cpp
   resources/resources.qrc
 )
+file(GLOB_RECURSE AERO7_PACK_ICON_FILES CONFIGURE_DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/resources/icons/pack/*.png")
+qt_add_resources(aero7-programs-center "aero7-programs-pack-icons"
+  PREFIX "/aero7/pack"
+  BASE "${CMAKE_CURRENT_SOURCE_DIR}/resources/icons/pack"
+  FILES ${AERO7_PACK_ICON_FILES})
 target_link_libraries(aero7-programs-center PRIVATE programs-center-core Qt6::Widgets Qt6::DBus)
 
 install(TARGETS aero7-programs-center RUNTIME DESTINATION bin)
@@ -37,6 +43,10 @@ foreach(size 16 22 32 48 64 128 256)
 endforeach()
 install(FILES resources/icons/aero7-programs-center.png DESTINATION share/icons/hicolor/512x512/apps)
 install(FILES catalog/featured.json DESTINATION share/aero7-programs-center/catalog)
+install(FILES ASSET-PROVENANCE.md
+  resources/icons/pack/UPSTREAM-LICENSE
+  resources/icons/pack/UPSTREAM-README.md
+  DESTINATION share/doc/aero7-programs-center)
 install(PROGRAMS helper/aero7-programs-center-helper DESTINATION lib/aero7-programs-center)
 install(FILES helper/org.aero7.programscenter.policy DESTINATION share/polkit-1/actions)
 
