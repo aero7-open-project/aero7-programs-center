@@ -42,10 +42,9 @@ target_link_libraries(aero7-programs-center PRIVATE programs-center-core Qt6::Wi
 
 install(TARGETS aero7-programs-center RUNTIME DESTINATION bin)
 install(FILES packaging/aero7-programs-center.desktop DESTINATION share/applications)
-foreach(size 16 22 32 48 64 128 256)
+foreach(size 16 22 24 32 48 64 128 256 512)
   install(FILES resources/icons/${size}x${size}/aero7-programs-center.png DESTINATION share/icons/hicolor/${size}x${size}/apps)
 endforeach()
-install(FILES resources/icons/aero7-programs-center.png DESTINATION share/icons/hicolor/512x512/apps)
 install(FILES catalog/featured.json catalog/sources.json DESTINATION share/aero7-programs-center/catalog)
 install(FILES ASSET-PROVENANCE.md
   resources/icons/pack/UPSTREAM-LICENSE

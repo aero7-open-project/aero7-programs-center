@@ -3,6 +3,7 @@
 #include <QApplication>
 #include <QIcon>
 #include <QImage>
+#include <QRect>
 
 namespace {
 
@@ -44,5 +45,24 @@ int main(int argc, char **argv)
     if (Aero7Icons::resource(QStringLiteral(":/missing/aero7-icon.svg"),
                              QStringLiteral("package")).isNull())
         return 2;
+
+    // A named hicolor icon must occupy the taskbar slot, independent of the
+    // desktop's theme and of which standard icon size the shell requests.
+    for (const int size : {16, 22, 24, 32, 48, 64, 128, 256, 512}) {
+        const QString path = QStringLiteral(AERO7_PROGRAMS_CENTER_SOURCE_DIR)
+            + QStringLiteral("/resources/icons/%1x%1/aero7-programs-center.png").arg(size);
+        const QImage icon(path);
+        if (icon.isNull() || icon.width() != size || icon.height() != size)
+            return 3;
+        QRect content;
+        for (int y = 0; y < size; ++y) {
+            for (int x = 0; x < size; ++x) {
+                if (icon.pixelColor(x, y).alpha() != 0)
+                    content |= QRect(x, y, 1, 1);
+            }
+        }
+        if (content.width() * 100 < size * 90 || content.height() * 100 < size * 95)
+            return 4;
+    }
     return 0;
 }
