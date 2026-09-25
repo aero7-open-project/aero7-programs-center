@@ -1,5 +1,38 @@
 # VM testing
 
+## 2026-09-25 catalog and trusted-install run
+
+- Build: local `testing` commit `57298d8`, packaged as
+  `aero7-programs-center-git 1:0.2.0.r16.g57298d8-1`. The package build's
+  five CTest cases passed. The same package and `archlinux-appstream-data`
+  installed in a disposable QEMU overlay of the Beta 2 online acceptance VM;
+  the saved base disk was not modified.
+- Discovery: the installed guest app showed 1,227 available programs with
+  AppStream names and artwork ([catalog screenshot](qa/2026-09-25/catalog-home.png)).
+  On the current Aero7 host, the packaged app and catalog showed 1,234
+  programs ([home](qa/2026-09-25/host-catalog-home.png)); search returned
+  available GIMP and related packages ([search](qa/2026-09-25/host-search.png)).
+- Password-free opt-in: from a process launched by the VM's local desktop,
+  the checkbox requested administrator authentication
+  ([prompt](qa/2026-09-25/admin-opt-in.png)) and then stayed checked
+  ([setting](qa/2026-09-25/permission-enabled.png)). `pkcheck` authorized
+  that local GUI process but denied the same user's SSH process.
+- Real install: with the option enabled, the app installed `extra/cowsay`
+  after the app's own confirmation and without another password prompt
+  ([success](qa/2026-09-25/passwordless-install-success.png)). `pacman -Q`
+  reported `cowsay 3.8.4-1`, and the package lock was clear. Disabling the
+  checkbox required administrator authentication again; afterward `pkcheck`
+  denied all open GUI instances.
+- Guest setup caveat: SSH was absent in the base image. It was installed only
+  in the disposable overlay for package transfer, and the overlay's firewall
+  was temporarily stopped for that transport. The guest's cached mirror had
+  two stale dependency URLs; copying the exact signed cache artifacts from
+  the host allowed the test package to install. Neither workaround is a
+  production configuration change.
+- Scope: this validates discovery, packaging, opt-in/revocation, and one
+  trusted install. It is not an update-all, removal, offline-download,
+  authentication-cancellation, or physical-install acceptance pass.
+
 ## 2026-08-11 run
 
 - VM: QEMU `Aero7-Installer-Test`, Arch Linux, Plasma 6.7.4 Wayland, kernel 7.1.7, 4 GiB RAM / 4 vCPU.
