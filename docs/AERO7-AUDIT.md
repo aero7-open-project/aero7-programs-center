@@ -13,4 +13,10 @@ Reusable findings:
 - Stable Control Panel deep links are `control --setting <catalog-key>`; `updates` and `default-apps` are current keys.
 - Aero7 and Aero7-shell document disposable Plasma Wayland VM testing, but this workstation currently exposes no libvirt guests and no SSH test host.
 
-Asset decision: runtime software/category icons come from the active system icon theme with Aero7-style fallback names. The only copied branding asset is `aero7-shell/docs/assets/aero7-logo.png`, whose provenance explicitly permits modification/reuse when preserved. AeroThemePlasma screenshots and Microsoft-derived resources are not copied.
+Asset decision (updated for the application-icon independence pass): Programs
+Center-owned navigation, category, trust and action icons are embedded from the
+pinned AeroThemePlasma icon pack with its licence and upstream README. Product
+artwork uses AppStream's absolute cached image or searches the installed
+application's hicolor/pixmap payload directly; it does not make the application
+chrome depend on the active desktop icon theme. Microsoft-derived resources are
+not copied.

@@ -1,0 +1,103 @@
+#include "ui/MainWindow.h"
+#include "ui/ProgramCard.h"
+#include "ui/WrappingGridLayout.h"
+#include <QCheckBox>
+#include <QLabel>
+#include <QListWidget>
+#include <QScrollArea>
+#include <QScrollBar>
+#include <QSettings>
+#include <QStackedWidget>
+#include <QTemporaryDir>
+#include <QtTest>
+
+class HomeLayoutTest : public QObject {
+    Q_OBJECT
+    QTemporaryDir settings;
+    static void fill(QWidget *host) {
+        while (auto *item = host->layout()->takeAt(0)) { delete item->widget(); delete item; }
+        for (int i = 0; i < 8; ++i) {
+            Package package;
+            package.name = QString("test-%1").arg(i);
+            package.displayName = "Computer Management and File Utilities";
+            package.summary = "A longer description that must wrap without hiding the install button or overlapping another card.";
+            package.repository = "aero7";
+            host->layout()->addWidget(new ProgramCard(package));
+        }
+    }
+private slots:
+    void initTestCase() {
+        QVERIFY(settings.isValid());
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settings.path());
+        QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, settings.path());
+    }
+    void homeRemainsInsideViewport() {
+        MainWindow window(parseDeepLink({"app", "--home"}));
+        auto *scroll = window.findChild<QScrollArea *>("homeScroll");
+        QVERIFY(scroll);
+        auto *host = scroll->findChild<QWidget *>("recommendedGrid");
+        QVERIFY(host);
+        fill(host);
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        for (int width : {1600, 1200, 900, 1200}) {
+            window.resize(width, 780);
+            // Wayland commits compositor-approved sizes asynchronously. Wait
+            // for the requested size, not a fixed delay that can test the old
+            // geometry or catch the scroll area's intermediate resize.
+            QTRY_COMPARE(window.size(), QSize(width, 780));
+            QTRY_COMPARE(scroll->widget()->width(), scroll->viewport()->width());
+            qInfo() << "Home geometry" << "requested" << width << "window" << window.size()
+                    << "content" << scroll->widget()->size() << "viewport" << scroll->viewport()->size()
+                    << "minimum" << scroll->widget()->minimumSizeHint();
+            QCOMPARE(scroll->horizontalScrollBar()->maximum(), 0);
+            QVERIFY(scroll->widget()->width() <= scroll->viewport()->width());
+            const auto cards = host->findChildren<ProgramCard *>(QString(), Qt::FindDirectChildrenOnly);
+            QCOMPARE(cards.size(), 8);
+            for (auto *card : cards) {
+                QVERIFY2(host->rect().contains(card->geometry()), qPrintable(QString("Card outside host at width %1").arg(width)));
+                for (auto *other : cards) if (other != card)
+                    QVERIFY(!other->geometry().intersects(card->geometry()));
+                for (auto *label : card->findChildren<QLabel *>()) {
+                    const QRect geometry(label->mapTo(card, QPoint()), label->size());
+                    QVERIFY(card->rect().contains(geometry));
+                    if (label->wordWrap()) QVERIFY(label->height() >= label->heightForWidth(label->width()));
+                }
+            }
+        }
+    }
+    void emptyAndSingleCard() {
+        QWidget host;
+        auto *layout = new WrappingGridLayout(&host);
+        QCOMPARE(layout->heightForWidth(400), 0);
+        Package package;
+        package.displayName = "Paint";
+        layout->addWidget(new ProgramCard(package));
+        host.resize(400, layout->heightForWidth(400));
+        host.show();
+        QTest::qWait(50);
+        QCOMPARE(layout->count(), 1);
+        QVERIFY(host.rect().contains(layout->itemAt(0)->geometry()));
+    }
+    void softwareSourcesNavigation() {
+        MainWindow window(parseDeepLink({"app", "--home"}));
+        auto *sidebar = window.findChild<QListWidget *>("sidebar");
+        auto *pages = window.findChild<QStackedWidget *>();
+        QVERIFY(sidebar);
+        QVERIFY(pages);
+        QListWidgetItem *sourceItem = nullptr;
+        for (int row = 0; row < sidebar->count(); ++row)
+            if (sidebar->item(row)->text() == "Software Sources") sourceItem = sidebar->item(row);
+        QVERIFY(sourceItem);
+        const QRect target = sidebar->visualItemRect(sourceItem);
+        QTest::mouseClick(sidebar->viewport(), Qt::LeftButton, Qt::NoModifier, target.center());
+        QCOMPARE(pages->currentWidget()->objectName(), QString("settingsScroll"));
+        const auto toggles = pages->currentWidget()->findChildren<QCheckBox *>();
+        QCOMPARE(toggles.size(), 5);
+        QVERIFY(!toggles.at(0)->isEnabled());
+        QVERIFY(!toggles.at(1)->isEnabled());
+    }
+};
+QTEST_MAIN(HomeLayoutTest)
+#include "test_home_layout.moc"

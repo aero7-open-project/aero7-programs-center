@@ -1,7 +1,8 @@
 #include "Package.h"
 
 QString Package::searchableText() const {
-    return (displayName + ' ' + name + ' ' + summary + ' ' + description + ' ' + category).toCaseFolded();
+    return (displayName + ' ' + name + ' ' + productId + ' ' + summary + ' '
+            + description + ' ' + category + ' ' + keywords.join(' ')).toCaseFolded();
 }
 
 QString humanSize(qint64 bytes) {
@@ -21,5 +22,15 @@ bool isCriticalPackage(const QString &n) {
 }
 
 QString friendlyRepository(const QString &r) {
-    return r.compare("aero7", Qt::CaseInsensitive) == 0 ? QStringLiteral("Aero7") : r;
+    const auto descriptor = SourcePolicy::descriptor(SourcePolicy::fromRepository(r));
+    return descriptor.source == SoftwareSource::Unknown ? r : descriptor.name;
+}
+
+PackageVariant packageVariant(const Package &package)
+{
+    return {
+        package.name, package.version, package.installedVersion, package.repository,
+        package.source, package.provider, package.state, package.sourcePriority,
+        package.critical, package.approvedSystemReplacement, package.blockedReason,
+    };
 }

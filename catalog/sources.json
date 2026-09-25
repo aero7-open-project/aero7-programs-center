@@ -1,0 +1,64 @@
+{
+  "schema": 1,
+  "approved_cachyos_packages": [
+    "floorp-bin",
+    "sunshine",
+    "zen-browser-bin"
+  ],
+  "applications": [
+    {
+      "id": "org.mozilla.firefox",
+      "variants": [
+        {"source": "aero7", "package": "firefox", "priority": 600},
+        {"source": "arch", "package": "firefox", "priority": 500},
+        {"source": "flathub", "package": "org.mozilla.firefox", "priority": 100}
+      ]
+    },
+    {
+      "id": "org.videolan.VLC",
+      "variants": [
+        {"source": "arch", "package": "vlc", "priority": 500},
+        {"source": "flathub", "package": "org.videolan.VLC", "priority": 100}
+      ]
+    },
+    {
+      "id": "org.gimp.GIMP",
+      "variants": [
+        {"source": "arch", "package": "gimp", "priority": 500},
+        {"source": "flathub", "package": "org.gimp.GIMP", "priority": 100}
+      ]
+    },
+    {
+      "id": "org.kde.krita",
+      "variants": [
+        {"source": "arch", "package": "krita", "priority": 500},
+        {"source": "flathub", "package": "org.kde.krita", "priority": 100}
+      ]
+    },
+    {
+      "id": "org.libreoffice.LibreOffice",
+      "variants": [
+        {"source": "arch", "package": "libreoffice-fresh", "priority": 500},
+        {"source": "flathub", "package": "org.libreoffice.LibreOffice", "priority": 100}
+      ]
+    },
+    {
+      "id": "app.zen_browser.zen",
+      "variants": [
+        {"source": "cachyos", "package": "zen-browser-bin", "priority": 200}
+      ]
+    },
+    {
+      "id": "one.ablaze.floorp",
+      "variants": [
+        {"source": "cachyos", "package": "floorp-bin", "priority": 200}
+      ]
+    },
+    {
+      "id": "dev.lizardbyte.app.Sunshine",
+      "variants": [
+        {"source": "cachyos", "package": "sunshine", "priority": 200}
+      ]
+    }
+  ]
+}

@@ -1,50 +1,91 @@
 # Aero7 Programs Center
 
-Programs Center is the optional graphical software manager for Aero7. It
-provides a Windows 7-inspired interface for discovering applications, searching
-locally indexed package metadata, viewing package details, managing installed
-applications, and performing complete Arch Linux updates.
+Programs Center is Aero7's optional graphical software manager. It combines a
+Windows 7-style Control Panel and Explorer interface with the native Arch Linux
+package system and a guarded multi-source application catalog.
 
 > [!IMPORTANT]
-> Programs Center remains Beta software. It is included in the Aero7 Beta 2
-> package set as an optional feature and is not installed on a fresh desktop.
-> Enable or remove it through **Control Panel > Programs and Features > Turn
-> Aero7 features on or off**. Beta 2 retains a checksum-verified copy of the
-> package locally, so this feature can be enabled again without internet.
+> Programs Center is Beta software. On Aero7 Beta 2 it is an optional feature
+> under **Control Panel > Programs and Features > Turn Aero7 features on or
+> off**. A checksum-verified package is retained by the offline image so the
+> feature can be enabled again without downloading it.
 
-## Features
+## What it provides
 
-- Browse, search, and inspect software from configured pacman repositories
-- Install and remove applications through a narrowly scoped privileged helper
-- Refresh repositories and perform complete Arch Linux system upgrades
-- Show installed software, available updates, package source, size, and status
-- Use Aero7-owned application and action icons regardless of the active theme
-- Open the matching Control Panel pages from Quick Tasks
+- Windows 7-style navigation, command bar, task pane, list views and dialogs
+- Application discovery from Aero7, official Arch, Chaotic-AUR, the reviewed
+  CachyOS Applications catalog and Flathub
+- One product entry when the same application exists in more than one source
+- Clear source labels, recommended-source ordering and advanced alternatives
+- Installed-program management and System, Application and Third-party update
+  groups
+- A Software Sources page with fixed trusted sources and optional source
+  switches
+- AppStream names, descriptions, publishers, licenses and real application
+  artwork when the catalog supplies it
+- Aero7-owned interface icons embedded from the pinned AeroThemePlasma pack, so
+  the app chrome does not change with the desktop icon theme
+
+## Software sources and trust
+
+Programs Center separates where software comes from from whether the package is
+considered part of the trusted system base.
+
+| Source | Default trust | Behavior |
+| --- | --- | --- |
+| Aero7 | Trusted | Official Aero7 integration packages and updates; highest recommendation priority |
+| Arch Linux | Trusted | Official `core`, `extra`, `multilib` and their official testing repositories |
+| Aero7 approved native | Reviewed third-party | Native packages explicitly approved in the signed Aero7 catalog |
+| Chaotic-AUR | Third-party | Precompiled community packages; Programs Center never invokes `yay` or `paru` |
+| CachyOS Applications | Third-party | Only application IDs in Aero7's maintained allowlist are exposed; a full CachyOS repository is never enabled |
+| Flathub | Third-party | Flatpak applications; the per-user Flathub remote is added automatically when the first Flatpak is installed |
+
+Aero7 and Arch Linux cannot be disabled in Programs Center. Optional sources
+may be hidden in **Software Sources**. Installed applications remain visible and
+manageable even when their source is disabled.
+
+The signed `sources.json` catalog maps package variants to one product ID,
+defines source priority and carries the CachyOS allowlist. Updating the normal
+Programs Center package therefore updates the allowlist without granting a
+remote service permission to rewrite pacman configuration.
 
 ## Safety model
 
-The GUI always runs as the signed-in user. Read-only package discovery uses libalpm. A narrow polkit-authorized helper accepts only four validated operations and executes `/usr/bin/pacman` directly with argument arrays—never through a shell. Pacman's configured signature policy is left untouched, its database lock is respected, and `Update All` uses `pacman -Syu`. Partial upgrades are deliberately rejected.
+The GUI runs as the signed-in user. Native package discovery uses libalpm. A
+narrow polkit helper accepts only validated package operations and executes
+`pacman` directly with argument arrays, never through a shell. Pacman's lock,
+signature policy and full-upgrade rule remain authoritative.
 
-Supported package sources are the configured official Arch repositories and the
-signed `[aero7]` repository. AUR and Flatpak are not enabled.
+Programs Center blocks native candidates that declare a replacement or conflict
+against protected foundation packages. An exception can only be made by an
+explicit reviewed entry in the signed Aero7 catalog. Direct AUR builds are not
+supported.
+
+Flatpak operations run in the current user's Flatpak installation. If needed,
+Programs Center first adds only the official Flathub remote and then continues
+the requested install. No root password or pacman repository rewrite is used
+for that setup.
 
 ## Installation and updates
 
-On Aero7 Beta 2, use **Turn Aero7 features on or off**. This keeps the feature
-state, package verification, authentication, and retained-data explanation in
-one place. Once installed, Programs Center receives normal updates from the
-signed Aero7 package repository.
-
-The package name is `aero7-programs-center-git`. It can also be managed with
-pacman by experienced administrators, but the Control Panel route is the
-supported desktop workflow.
+The supported desktop route is **Turn Aero7 features on or off**. Once enabled,
+the `aero7-programs-center-git` package receives normal updates from the signed
+Aero7 package repository. Experienced administrators can manage that package
+with pacman, but the Control Panel feature flow remains the recommended route.
 
 ## Relationship to Control Panel
 
-Control Panel remains Aero7's administrative settings interface and keeps its existing Programs and Features and Linux Update pages. Programs Center is an additional user-friendly view over the same pacman databases, repositories, lock, and signature policy. Quick Tasks deep-link back to `control` and `control --setting updates`.
+Control Panel remains Aero7's administrative settings interface. Programs
+Center is a focused application catalog over the same package databases and
+signature rules. Its visual structure deliberately reuses the established
+Aero7 Control Panel and File Explorer language rather than introducing a
+separate modern store design.
 
-## Known limitations
+## Current limitations
 
-AppStream enrichment is supplemented by desktop-entry metadata. Per-package
-update selection is rejected to preserve Arch's full-upgrade rule. Transaction
-progress is phase/log based, and no AUR or Flatpak provider is enabled.
+- Native application quality depends on the installed Arch AppStream catalog.
+- Update installation remains a complete Arch upgrade; partial system upgrades
+  are deliberately not offered.
+- Chaotic-AUR and CachyOS entries are shown only when the corresponding package
+  metadata is available to libalpm; Programs Center does not silently add
+  pacman repositories.

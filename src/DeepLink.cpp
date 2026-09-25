@@ -7,6 +7,7 @@ DeepLink parseDeepLink(const QStringList &a) {
         if (v=="--home") out.page=DeepLink::Home;
         else if (v=="--updates") out.page=DeepLink::Updates;
         else if (v=="--installed") out.page=DeepLink::Installed;
+        else if (v=="--sources") out.page=DeepLink::Sources;
         else if ((v=="--search" || v=="--package" || v=="--category") && i+1<a.size()) {
             out.page = v=="--search" ? DeepLink::Search : v=="--package" ? DeepLink::PackageDetails : DeepLink::Category;
             out.value=a[++i];

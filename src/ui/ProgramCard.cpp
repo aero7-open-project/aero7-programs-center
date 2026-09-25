@@ -1,15 +1,25 @@
 #include "ProgramCard.h"
-#include "Aero7Icon.h"
+#include "PackageIcon.h"
+#include "SourceBadge.h"
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMouseEvent>
 #include <QPushButton>
 #include <QStyle>
 #include <QVBoxLayout>
 
-ProgramCard::ProgramCard(const Package&p,QWidget*parent):QFrame(parent){
- setObjectName("programCard");setCursor(Qt::PointingHandCursor);setFrameShape(QFrame::StyledPanel);setMinimumSize(230,116);
- auto*h=new QHBoxLayout(this);auto*icon=new QLabel;QIcon packageIcon=p.iconName.isEmpty()?QIcon():QIcon::fromTheme(p.iconName);if(packageIcon.isNull())packageIcon=Aero7Icons::icon("package");icon->setPixmap(packageIcon.pixmap(48));icon->setFixedSize(52,52);h->addWidget(icon,0,Qt::AlignTop);
+ProgramCard::ProgramCard(const Package&p,QWidget*parent):QFrame(parent),m_productId(p.productId.isEmpty()?p.name:p.productId){
+ setObjectName("programCard");setCursor(Qt::PointingHandCursor);setFrameShape(QFrame::StyledPanel);setMinimumSize(250,136);
+ setAccessibleName(p.displayName);setToolTip(QStringLiteral("Open details for %1").arg(p.displayName));
+ auto*h=new QHBoxLayout(this);auto*icon=new QLabel;icon->setPixmap(packageArtwork(p).pixmap(48,48));icon->setFixedSize(52,52);h->addWidget(icon,0,Qt::AlignTop);
  auto*v=new QVBoxLayout;auto*name=new QLabel(p.displayName);name->setObjectName("cardName");name->setWordWrap(true);v->addWidget(name);auto*desc=new QLabel(p.summary);desc->setObjectName("cardSummary");desc->setWordWrap(true);v->addWidget(desc);v->addStretch();
- auto*row=new QHBoxLayout;auto*source=new QLabel(friendlyRepository(p.repository));source->setObjectName("cardSource");row->addWidget(source);row->addStretch();auto*b=new QPushButton(p.state==PackageState::Installed?"Installed":"Install");b->setEnabled(p.state!=PackageState::Installed);row->addWidget(b);v->addLayout(row);h->addLayout(v,1);
+ if(SourcePolicy::isThirdParty(p.source)){auto*warning=new QLabel("Third-party software");warning->setObjectName("cardWarning");v->addWidget(warning);}
+ auto*row=new QHBoxLayout;row->addWidget(new SourceBadge(p.source));row->addStretch();auto*b=new QPushButton(p.state==PackageState::Installed?"Installed":p.blockedReason.isEmpty()?"Install":"Unavailable");b->setEnabled(p.state!=PackageState::Installed&&p.blockedReason.isEmpty());row->addWidget(b);v->addLayout(row);h->addLayout(v,1);
  connect(b,&QPushButton::clicked,this,[this,p]{emit actionRequested(p.name);});
+}
+
+void ProgramCard::mouseReleaseEvent(QMouseEvent *event)
+{
+ if(event->button()==Qt::LeftButton)emit detailsRequested(m_productId);
+ QFrame::mouseReleaseEvent(event);
 }
