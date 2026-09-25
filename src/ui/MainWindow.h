@@ -9,9 +9,11 @@
 
 class QCloseEvent;
 class QComboBox;
+class QCheckBox;
 class QLabel;
 class QLineEdit;
 class QListWidget;
+class QPushButton;
 class QStackedWidget;
 class QTreeWidget;
 
@@ -35,6 +37,8 @@ private:
     QComboBox *m_sourceFilter = nullptr;
     QLabel *m_breadcrumb = nullptr;
     QLabel *m_status = nullptr;
+    QPushButton *m_catalogButton = nullptr;
+    QCheckBox *m_passwordlessCheck = nullptr;
     QWidget *m_home = nullptr;
     QWidget *m_results = nullptr;
     QWidget *m_settings = nullptr;
@@ -51,6 +55,8 @@ private:
     void runAction(const Package &, bool remove = false);
     void setLocation(const QString &location);
     bool sourceEnabled(SoftwareSource source) const;
+    bool trustedInstallAllowed() const;
+    void changeTrustedInstallPermission(bool enabled);
     const Package *findPackage(const QString &id) const;
     QWidget *makeHome();
     QWidget *makeListPage();

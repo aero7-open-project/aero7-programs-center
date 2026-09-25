@@ -9,4 +9,18 @@
     <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/aero7-programs-center/aero7-programs-center-helper</annotate>
     <annotate key="org.freedesktop.policykit.exec.allow_gui">false</annotate>
   </action>
+  <action id="org.aero7.programscenter.trusted-install">
+    <description>Install a trusted Aero7 or Arch application</description>
+    <message>Administrator approval is required before password-free trusted installs can be used.</message>
+    <defaults><allow_any>no</allow_any><allow_inactive>no</allow_inactive><allow_active>no</allow_active></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/aero7-programs-center/aero7-programs-center-trusted-installer</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">false</annotate>
+  </action>
+  <action id="org.aero7.programscenter.configure-passwordless">
+    <description>Change password-free trusted installs for this account</description>
+    <message>Administrator authentication is required to change this account's software permissions.</message>
+    <defaults><allow_any>no</allow_any><allow_inactive>no</allow_inactive><allow_active>auth_admin</allow_active></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/aero7-programs-center/aero7-programs-center-permissions</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">false</annotate>
+  </action>
 </policyconfig>

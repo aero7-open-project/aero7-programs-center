@@ -10,6 +10,7 @@ public:
     void enrich(Package &package) const;
     QList<Package> flatpakPackages() const { return m_flatpaks; }
     QString appStreamError() const { return m_appStreamError; }
+    bool nativeCatalogAvailable() const { return m_nativeCatalogAvailable; }
     static QString mapCategory(const QStringList &categories);
     static QStringList loadFeatured(const QString &path, QString *error=nullptr);
 private:
@@ -21,4 +22,5 @@ private:
     QHash<QString,Entry> m_entries;
     QList<Package> m_flatpaks;
     QString m_appStreamError;
+    bool m_nativeCatalogAvailable = false;
 };

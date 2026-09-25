@@ -23,6 +23,10 @@ package system and a guarded multi-source application catalog.
   switches
 - AppStream names, descriptions, publishers, licenses and real application
   artwork when the catalog supplies it
+- A searchable Arch application catalog; if catalog data is missing, Programs
+  Center explains the problem and offers an authenticated repair action
+- An optional per-account setting for password-free installs from trusted
+  Aero7 and official Arch repositories, enabled only after administrator approval
 - Aero7-owned interface icons embedded from the pinned AeroThemePlasma pack, so
   the app chrome does not change with the desktop icon theme
 
@@ -66,6 +70,15 @@ Programs Center first adds only the official Flathub remote and then continues
 the requested install. No root password or pacman repository rewrite is used
 for that setup.
 
+The **Software Sources** page can enable password-free trusted application
+installs for the current account. Enabling or disabling it requires an
+administrator password. Its separate polkit action is available only in an
+active local session, and its helper accepts one package from Aero7, `core`,
+`extra`, or `multilib` after checking the entire cached dependency plan.
+Conflicting/replacing packages, packages from other repositories, removal, and
+system upgrades do not use this permission. The setting stores a root-owned
+per-user polkit rule, not a password; disabling it removes the rule.
+
 ## Installation and updates
 
 The supported desktop route is **Turn Aero7 features on or off**. Once enabled,
@@ -83,7 +96,10 @@ separate modern store design.
 
 ## Current limitations
 
-- Native application quality depends on the installed Arch AppStream catalog.
+- The full Arch application catalog requires `archlinux-appstream-data`, which
+  is a package dependency. Existing installations missing it can use the
+  **Install the application catalog** action on the Home page. Without it,
+  featured apps and package-name search remain available.
 - Update installation remains a complete Arch upgrade; partial system upgrades
   are deliberately not offered.
 - Chaotic-AUR and CachyOS entries are shown only when the corresponding package

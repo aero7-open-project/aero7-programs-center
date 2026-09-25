@@ -10,6 +10,23 @@
 
 inline QIcon packageArtwork(const Package &package)
 {
+    if (package.provider == PackageProvider::Pacman && !package.name.isEmpty()) {
+        const auto dataRoots = QStandardPaths::standardLocations(QStandardPaths::GenericDataLocation);
+        for (const QString &root : dataRoots) {
+            for (const int size : {64, 128, 48}) {
+                const QDir catalog(QDir(root).filePath(
+                    QStringLiteral("swcatalog/icons/archlinux-arch-%1/%2x%2")
+                        .arg(package.repository).arg(size)));
+                const auto files = catalog.entryList({package.name + QStringLiteral("_*.jxl"),
+                    package.name + QStringLiteral("_*.png"),
+                    package.name + QStringLiteral("_*.svg")}, QDir::Files);
+                if (!files.isEmpty()) {
+                    const QIcon artwork(catalog.filePath(files.first()));
+                    if (!artwork.pixmap(48, 48).isNull()) return artwork;
+                }
+            }
+        }
+    }
     if (!package.iconName.isEmpty()) {
         const QFileInfo direct(package.iconName);
         if (direct.isAbsolute() && direct.isReadable()) {

@@ -4,17 +4,25 @@
 #include <QStandardPaths>
 
 PackageTransaction::PackageTransaction(QObject *p):QObject(p){
- connect(&m_process,&QProcess::readyReadStandardOutput,this,[this]{emit progress("Working…",-1,QString::fromUtf8(m_process.readAllStandardOutput()).trimmed());});
- connect(&m_process,&QProcess::readyReadStandardError,this,[this]{emit progress("Working…",-1,QString::fromUtf8(m_process.readAllStandardError()).trimmed());});
+ connect(&m_process,&QProcess::readyReadStandardOutput,this,[this]{
+  const QString chunk=QString::fromUtf8(m_process.readAllStandardOutput());
+  m_output=(m_output+chunk).right(16000);
+  emit progress("Working…",-1,chunk.trimmed());
+ });
+ connect(&m_process,&QProcess::readyReadStandardError,this,[this]{
+  const QString chunk=QString::fromUtf8(m_process.readAllStandardError());
+  m_output=(m_output+chunk).right(16000);
+  emit progress("Working…",-1,chunk.trimmed());
+ });
  connect(&m_process,qOverload<int,QProcess::ExitStatus>(&QProcess::finished),this,[this](int code,QProcess::ExitStatus s){
   const bool ok=s==QProcess::NormalExit&&code==0;
-  const QString details=QString::fromUtf8(m_process.readAll());
+  const QString details=(m_output+QString::fromUtf8(m_process.readAll())).right(16000);
   if(ok&&!m_followUpProgram.isEmpty()){
    const QString program=m_followUpProgram;const QStringList arguments=m_followUpArguments;
    m_followUpProgram.clear();m_followUpArguments.clear();
    emit progress(QStringLiteral("Installing from Flathub…"),0,{});m_process.start(program,arguments);return;
   }
-  m_followUpProgram.clear();m_followUpArguments.clear();emit finished(ok,details);
+  m_followUpProgram.clear();m_followUpArguments.clear();m_output.clear();emit finished(ok,details);
  });
 }
 bool PackageTransaction::start(Operation op,const QStringList &packages){
@@ -43,5 +51,17 @@ bool PackageTransaction::startFlatpak(Operation op,const QString &applicationId)
   }
  }
  m_process.start(QStringLiteral("flatpak"),args);
+ return m_process.waitForStarted(3000);
+}
+
+bool PackageTransaction::startTrustedInstall(const QString &repository,const QString &package){
+ if(m_process.state()!=QProcess::NotRunning||QFileInfo::exists(QStringLiteral("/var/lib/pacman/db.lck")))return false;
+ static const QRegularExpression validPackage(QStringLiteral("^[A-Za-z0-9@._+-]+$"));
+ if(!QStringList{QStringLiteral("aero7"),QStringLiteral("core"),QStringLiteral("extra"),QStringLiteral("multilib")}.contains(repository)
+    ||!validPackage.match(package).hasMatch())return false;
+ emit progress(QStringLiteral("Checking trusted package…"),0,{});
+ m_process.start(QStringLiteral("pkexec"),{QStringLiteral("--disable-internal-agent"),
+  QStringLiteral("/usr/lib/aero7-programs-center/aero7-programs-center-trusted-installer"),
+  repository,package});
  return m_process.waitForStarted(3000);
 }

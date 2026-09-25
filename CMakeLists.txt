@@ -52,6 +52,8 @@ install(FILES ASSET-PROVENANCE.md
   resources/icons/pack/UPSTREAM-README.md
   DESTINATION share/doc/aero7-programs-center)
 install(PROGRAMS helper/aero7-programs-center-helper DESTINATION lib/aero7-programs-center)
+install(PROGRAMS helper/aero7-programs-center-trusted-installer
+  helper/aero7-programs-center-permissions DESTINATION lib/aero7-programs-center)
 install(FILES helper/org.aero7.programscenter.policy DESTINATION share/polkit-1/actions)
 
 enable_testing()

@@ -10,6 +10,16 @@ shell, never deletes `db.lck`, never stores credentials, and rejects partial
 updates. `update-all` maps to a noninteractive `pacman --sync --refresh
 --sysupgrade` after graphical confirmation.
 
+Password-free installs are a separate, opt-in polkit action. An administrator
+must authenticate once to create the current account's root-owned rule. The
+rule applies only while that account has an active local session. The dedicated
+trusted installer accepts one explicitly qualified Aero7/Arch package, checks
+the complete cached dependency plan stays in those trusted repositories, and
+rejects any planned package that declares a conflict or replacement. It never
+removes packages or updates the whole system. Disabling the option removes the
+rule; normal package management still requires authentication. This is not a
+general `sudo` exemption and does not store credentials.
+
 Flatpak applications are installed or removed for the current user. When the
 user has no Flathub remote, the coordinator runs `flatpak remote-add --user
 --if-not-exists` for the official Flathub repository and only then continues

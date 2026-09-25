@@ -94,7 +94,7 @@ private slots:
         QTest::mouseClick(sidebar->viewport(), Qt::LeftButton, Qt::NoModifier, target.center());
         QCOMPARE(pages->currentWidget()->objectName(), QString("settingsScroll"));
         const auto toggles = pages->currentWidget()->findChildren<QCheckBox *>();
-        QCOMPARE(toggles.size(), 5);
+        QCOMPARE(toggles.size(), 6);
         QVERIFY(!toggles.at(0)->isEnabled());
         QVERIFY(!toggles.at(1)->isEnabled());
     }

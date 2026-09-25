@@ -11,11 +11,14 @@
 #include <QCheckBox>
 #include <QCloseEvent>
 #include <QComboBox>
+#include <QCoreApplication>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHeaderView>
+#include <QFileInfo>
+#include <QHash>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -23,8 +26,10 @@
 #include <QProcess>
 #include <QProgressDialog>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QScrollArea>
 #include <QSettings>
+#include <QSignalBlocker>
 #include <QShortcut>
 #include <QStackedWidget>
 #include <QStatusBar>
@@ -32,6 +37,7 @@
 #include <QToolButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
+#include <QTimer>
 
 #include <algorithm>
 
@@ -187,7 +193,12 @@ void MainWindow::buildUi()
     connect(updates, &QToolButton::clicked, this, &MainWindow::showUpdates);
     connect(settings, &QToolButton::clicked, this, &MainWindow::showSettings);
     connect(back, &QAction::triggered, this, &MainWindow::showHome);
-    connect(m_search, &QLineEdit::returnPressed, this, [this] { showResults(m_search->text()); });
+    auto *searchDelay = new QTimer(this);
+    searchDelay->setSingleShot(true);
+    searchDelay->setInterval(180);
+    connect(m_search, &QLineEdit::textChanged, searchDelay, qOverload<>(&QTimer::start));
+    connect(searchDelay, &QTimer::timeout, this, [this] { showResults(m_search->text()); });
+    connect(m_search, &QLineEdit::returnPressed, this, [this, searchDelay] { searchDelay->stop(); showResults(m_search->text()); });
     connect(m_sourceFilter, &QComboBox::currentIndexChanged, this, [this] {
         if (m_pages->currentWidget() == m_results) showResults(m_search->text());
     });
@@ -222,6 +233,11 @@ QWidget *MainWindow::makeHome()
     notice->setObjectName(QStringLiteral("catalogNotice"));
     notice->setWordWrap(true);
     layout->addWidget(notice);
+    m_catalogButton = taskLink(QStringLiteral("Install the application catalog"), QStringLiteral("install"));
+    layout->addWidget(m_catalogButton);
+    connect(m_catalogButton, &QPushButton::clicked, this, [this] {
+        if (const auto *package = findPackage(QStringLiteral("archlinux-appstream-data"))) runAction(*package);
+    });
     layout->addWidget(sectionHeading(QStringLiteral("Featured programs")));
     auto *featured = new QWidget;
     featured->setObjectName(QStringLiteral("featuredGrid"));
@@ -307,6 +323,17 @@ QWidget *MainWindow::makeSettingsPage()
     addSource(SoftwareSource::CachyOs, false);
     addSource(SoftwareSource::Flathub, false);
     layout->addWidget(Win7Style::instruction(QStringLiteral("Programs Center never runs yay or paru and never enables a full CachyOS repository. CachyOS Applications is limited to Aero7's reviewed allowlist. Disabling a source hides available programs but keeps installed programs manageable.")));
+    layout->addWidget(Win7Style::separator());
+    layout->addWidget(Win7Style::pageTitle(QStringLiteral("Install permissions")));
+    m_passwordlessCheck = new QCheckBox(QStringLiteral("Install trusted Aero7 and Arch applications without asking for a password"));
+    m_passwordlessCheck->setObjectName(QStringLiteral("trustedInstallCheck"));
+    m_passwordlessCheck->setChecked(trustedInstallAllowed());
+    m_passwordlessCheck->setEnabled(QFileInfo::exists(QStringLiteral("/usr/lib/aero7-programs-center/aero7-programs-center-permissions")));
+    layout->addWidget(m_passwordlessCheck);
+    layout->addWidget(Win7Style::instruction(QStringLiteral("An administrator must approve this setting once. It applies only to your active local session and to Aero7 or official Arch packages whose dependencies also come from those sources. Removing software, system updates and third-party native packages still require authentication. Flatpak apps install in your user account.")));
+    if (!m_passwordlessCheck->isEnabled())
+        layout->addWidget(Win7Style::instruction(QStringLiteral("Install the packaged Programs Center to enable this setting.")));
+    connect(m_passwordlessCheck, &QCheckBox::toggled, this, &MainWindow::changeTrustedInstallPermission);
     layout->addStretch();
     scroll->setWidget(content);
     return scroll;
@@ -344,19 +371,67 @@ bool MainWindow::sourceEnabled(SoftwareSource source) const
     return QSettings(QStringLiteral("Aero7"), QStringLiteral("ProgramsCenter")).value(QStringLiteral("sources/%1").arg(info.id), defaultValue).toBool();
 }
 
+bool MainWindow::trustedInstallAllowed() const
+{
+    QProcess check;
+    check.start(QStringLiteral("pkcheck"), {QStringLiteral("--action-id"),
+        QStringLiteral("org.aero7.programscenter.trusted-install"),
+        QStringLiteral("--process"), QString::number(QCoreApplication::applicationPid()),
+        QStringLiteral("--disable-internal-agent")});
+    return check.waitForFinished(2500) && check.exitStatus() == QProcess::NormalExit
+        && check.exitCode() == 0;
+}
+
+void MainWindow::changeTrustedInstallPermission(bool enabled)
+{
+    m_passwordlessCheck->setEnabled(false);
+    auto *process = new QProcess(this);
+    connect(process, qOverload<int,QProcess::ExitStatus>(&QProcess::finished), this,
+        [this, process](int code, QProcess::ExitStatus status) {
+            const bool success = status == QProcess::NormalExit && code == 0;
+            const QString error = QString::fromUtf8(process->readAllStandardError()).trimmed();
+            process->deleteLater();
+            { const QSignalBlocker block(m_passwordlessCheck);
+              m_passwordlessCheck->setChecked(trustedInstallAllowed());
+              m_passwordlessCheck->setEnabled(true); }
+            if (!success) QMessageBox::warning(this, QStringLiteral("Install permissions"),
+                error.isEmpty() ? QStringLiteral("The permission setting was not changed.") : error);
+        });
+    process->start(QStringLiteral("pkexec"), {QStringLiteral("--disable-internal-agent"),
+        QStringLiteral("/usr/lib/aero7-programs-center/aero7-programs-center-permissions"),
+        enabled ? QStringLiteral("enable") : QStringLiteral("disable")});
+}
+
 void MainWindow::loadData()
 {
     m_catalog.load();
     m_metadata.load();
     QList<Package> all = m_backend.packages();
     for (auto &package : all) m_metadata.enrich(package);
+    if (!m_metadata.nativeCatalogAvailable()) {
+        const QStringList featured = Metadata::loadFeatured(QStringLiteral(":/catalog/featured.json"));
+        for (auto &package : all) if (featured.contains(package.name)) {
+            package.application = true;
+            if (package.displayName == package.name) {
+                const QHash<QString,QString> names = {{QStringLiteral("vlc"),QStringLiteral("VLC")},
+                    {QStringLiteral("gimp"),QStringLiteral("GIMP")},
+                    {QStringLiteral("krita"),QStringLiteral("Krita")},
+                    {QStringLiteral("libreoffice-fresh"),QStringLiteral("LibreOffice")}};
+                package.displayName = names.value(package.name, package.name);
+            }
+        }
+    }
     all.append(m_metadata.flatpakPackages());
     QList<Package> enabled;
     for (const auto &package : all) if (sourceEnabled(package.source) || package.state != PackageState::Available) enabled.append(package);
     m_packages = m_catalog.groupProducts(enabled);
     const QString problem = !m_backend.lastError().isEmpty() ? m_backend.lastError() : !m_catalog.lastError().isEmpty() ? m_catalog.lastError() : m_backend.repositoryWarning();
     const auto appCount = std::count_if(m_packages.cbegin(), m_packages.cend(), [](const Package &package) { return package.application; });
-    m_status->setText(problem.isEmpty() ? QStringLiteral("%1 programs available from enabled sources").arg(appCount) : QStringLiteral("Software information is incomplete: %1").arg(problem));
+    m_status->setText(!m_metadata.nativeCatalogAvailable() ? QStringLiteral("%1 programs shown; install the application catalog to discover more").arg(appCount)
+        : problem.isEmpty() ? QStringLiteral("%1 programs available from enabled sources").arg(appCount)
+        : QStringLiteral("Software information is incomplete: %1").arg(problem));
+    if (m_catalogButton) m_catalogButton->setVisible(!m_metadata.nativeCatalogAvailable()
+        && findPackage(QStringLiteral("archlinux-appstream-data")));
 }
 
 void MainWindow::setLocation(const QString &location)
@@ -396,8 +471,10 @@ void MainWindow::showHome()
     fill("recommendedGrid", {}, 8);
     const QString warning = !m_backend.lastError().isEmpty() ? m_backend.lastError() : m_backend.repositoryWarning();
     auto *notice = m_home->findChild<QLabel *>(QStringLiteral("catalogNotice"));
-    notice->setText(warning);
-    notice->setVisible(!warning.isEmpty());
+    const QString catalogWarning = !m_metadata.nativeCatalogAvailable()
+        ? QStringLiteral("The full Arch application catalog is missing. Search still finds packages by name; install the catalog to browse all available apps.") : QString();
+    notice->setText(QStringList{catalogWarning, warning}.filter(QRegularExpression(QStringLiteral(".+"))).join(QStringLiteral("\n")));
+    notice->setVisible(!notice->text().isEmpty());
 }
 
 void MainWindow::showResults(const QString &query, const QString &category)
@@ -413,7 +490,7 @@ void MainWindow::showResults(const QString &query, const QString &category)
     for (const auto &package : m_packages) {
         if (!category.isEmpty() && package.category.compare(category, Qt::CaseInsensitive) != 0) continue;
         if (!needle.isEmpty() && !package.searchableText().contains(needle)) continue;
-        if (!package.application && !query.contains(package.name, Qt::CaseInsensitive)) continue;
+        if (!package.application && (needle.isEmpty() || !package.searchableText().contains(needle))) continue;
         if (sourceId != QStringLiteral("all") && SourcePolicy::descriptor(package.source).id != sourceId) continue;
         auto *item = new QTreeWidgetItem({package.displayName, package.version, humanSize(package.installedSize), SourcePolicy::descriptor(package.source).name, statusText(package)});
         item->setIcon(0, packageArtwork(package));
@@ -492,54 +569,81 @@ void MainWindow::showDetails(const QString &id)
     header->addWidget(icon, 0, Qt::AlignTop);
     auto *headings = new QVBoxLayout;
     headings->addWidget(Win7Style::pageTitle(package.displayName));
-    headings->addWidget(new SourceBadge(package.source));
+    auto *sourceBadge = new SourceBadge(package.source);
+    headings->addWidget(sourceBadge);
     header->addLayout(headings, 1);
     layout->addLayout(header);
     layout->addWidget(Win7Style::separator());
     auto *description = new QLabel(package.description.isEmpty() ? package.summary : package.description);
     description->setWordWrap(true);
     layout->addWidget(description);
-    if (SourcePolicy::isThirdParty(package.source)) {
-        auto *warning = new QLabel(SourcePolicy::warning(package.source));
-        warning->setWordWrap(true);
-        warning->setStyleSheet(QStringLiteral("color:#6f5300;background:#fff9df;border:1px solid #e1cf82;padding:7px;"));
-        layout->addWidget(warning);
-    }
+    auto *warning = new QLabel(SourcePolicy::warning(package.source));
+    warning->setWordWrap(true);
+    warning->setStyleSheet(QStringLiteral("color:#6f5300;background:#fff9df;border:1px solid #e1cf82;padding:7px;"));
+    warning->setVisible(SourcePolicy::isThirdParty(package.source));
+    layout->addWidget(warning);
     auto *form = new QFormLayout;
-    form->addRow(QStringLiteral("Version:"), new QLabel(package.version));
-    form->addRow(QStringLiteral("Installed version:"), new QLabel(package.installedVersion.isEmpty() ? QStringLiteral("Not installed") : package.installedVersion));
+    auto *version = new QLabel(package.version);
+    auto *installedVersion = new QLabel(package.installedVersion.isEmpty() ? QStringLiteral("Not installed") : package.installedVersion);
+    form->addRow(QStringLiteral("Version:"), version);
+    form->addRow(QStringLiteral("Installed version:"), installedVersion);
     form->addRow(QStringLiteral("Download size:"), new QLabel(humanSize(package.downloadSize)));
     form->addRow(QStringLiteral("Publisher:"), new QLabel(package.developer.isEmpty() ? QStringLiteral("Not specified") : package.developer));
     form->addRow(QStringLiteral("License:"), new QLabel(package.license.isEmpty() ? QStringLiteral("Not specified") : package.license));
+    QComboBox *alternatives = nullptr;
     if (package.variants.size() > 1) {
-        auto *alternatives = new QComboBox;
+        alternatives = new QComboBox;
         int recommendedPriority = 0;
         for (const auto &variant : package.variants) recommendedPriority = std::max(recommendedPriority, variant.priority);
-        for (const auto &variant : package.variants) {
+        for (int index = 0; index < package.variants.size(); ++index) {
+            const auto &variant = package.variants.at(index);
             const auto source = SourcePolicy::descriptor(variant.source);
-            alternatives->addItem(Aero7Icons::icon(source.iconKey), QStringLiteral("%1 — %2%3").arg(source.name, variant.version, variant.priority == recommendedPriority ? QStringLiteral(" (recommended)") : QString()), variant.packageId);
+            alternatives->addItem(Aero7Icons::icon(source.iconKey), QStringLiteral("%1 — %2%3").arg(source.name, variant.version, variant.priority == recommendedPriority ? QStringLiteral(" (recommended)") : QString()), index);
         }
         form->addRow(QStringLiteral("Install from:"), alternatives);
-        connect(alternatives, &QComboBox::currentIndexChanged, &dialog, [&package, alternatives](int index) {
-            const QString selected = alternatives->itemData(index).toString();
-            for (const auto &variant : package.variants) if (variant.packageId == selected) {
-                package.name = variant.packageId; package.version = variant.version; package.installedVersion = variant.installedVersion;
-                package.repository = variant.repository; package.source = variant.source; package.provider = variant.provider;
-                package.state = variant.state; package.critical = variant.critical; package.blockedReason = variant.blockedReason; break;
-            }
-        });
     } else form->addRow(QStringLiteral("Source:"), new QLabel(SourcePolicy::descriptor(package.source).name));
     layout->addLayout(form);
-    if (!package.blockedReason.isEmpty()) {
-        auto *blocked = new QLabel(package.blockedReason);
-        blocked->setWordWrap(true);
-        blocked->setStyleSheet(QStringLiteral("color:#9b1c1c;"));
-        layout->addWidget(blocked);
-    }
+    auto *blocked = new QLabel(package.blockedReason);
+    blocked->setWordWrap(true);
+    blocked->setStyleSheet(QStringLiteral("color:#9b1c1c;"));
+    blocked->setVisible(!package.blockedReason.isEmpty());
+    layout->addWidget(blocked);
     layout->addStretch();
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close);
     auto *action = buttons->addButton(package.state == PackageState::Installed ? QStringLiteral("Remove") : QStringLiteral("Install"), QDialogButtonBox::ActionRole);
     action->setEnabled(package.blockedReason.isEmpty() && (!package.critical || package.state != PackageState::Installed));
+    if (alternatives) {
+        for (int index = 0; index < package.variants.size(); ++index) {
+            const auto &variant = package.variants.at(index);
+            if (variant.packageId == package.name && variant.repository == package.repository
+                && variant.provider == package.provider) { alternatives->setCurrentIndex(index); break; }
+        }
+        connect(alternatives, &QComboBox::currentIndexChanged, &dialog,
+            [&package, alternatives, sourceBadge, warning, blocked, version, installedVersion, action](int index) {
+                const int selected = alternatives->itemData(index).toInt();
+                if (selected >= 0 && selected < package.variants.size()) {
+                    const auto &variant = package.variants.at(selected);
+                    package.name = variant.packageId;
+                    package.version = variant.version;
+                    package.installedVersion = variant.installedVersion;
+                    package.repository = variant.repository;
+                    package.source = variant.source;
+                    package.provider = variant.provider;
+                    package.state = variant.state;
+                    package.critical = variant.critical;
+                    package.blockedReason = variant.blockedReason;
+                    sourceBadge->setSource(package.source);
+                    warning->setText(SourcePolicy::warning(package.source));
+                    warning->setVisible(SourcePolicy::isThirdParty(package.source));
+                    blocked->setText(package.blockedReason);
+                    blocked->setVisible(!package.blockedReason.isEmpty());
+                    version->setText(package.version);
+                    installedVersion->setText(package.installedVersion.isEmpty() ? QStringLiteral("Not installed") : package.installedVersion);
+                    action->setText(package.state == PackageState::Installed ? QStringLiteral("Remove") : QStringLiteral("Install"));
+                    action->setEnabled(package.blockedReason.isEmpty() && (!package.critical || package.state != PackageState::Installed));
+                }
+            });
+    }
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
     connect(action, &QPushButton::clicked, &dialog, [this, &dialog, &package] { const bool remove = package.state == PackageState::Installed; dialog.accept(); runAction(package, remove); });
     layout->addWidget(buttons);
@@ -585,7 +689,14 @@ void MainWindow::runAction(const Package &package, bool remove)
         else QMessageBox::critical(this, QStringLiteral("Programs Center"), QStringLiteral("The software change could not be completed.\n\n%1").arg(details.left(800)));
     });
     const auto operation = remove ? PackageTransaction::Remove : PackageTransaction::Install;
-    const bool started = package.provider == PackageProvider::Flatpak ? transaction->startFlatpak(operation, package.name) : transaction->start(operation, {package.name});
+    const bool passwordless = !remove && (package.source == SoftwareSource::Aero7 || package.source == SoftwareSource::Arch)
+        && QStringList{QStringLiteral("aero7"),QStringLiteral("core"),QStringLiteral("extra"),QStringLiteral("multilib")}.contains(package.repository)
+        && trustedInstallAllowed();
+    const QString nativeTarget = !remove && !package.repository.isEmpty() && package.repository != QStringLiteral("local")
+        ? package.repository + QLatin1Char('/') + package.name : package.name;
+    const bool started = package.provider == PackageProvider::Flatpak ? transaction->startFlatpak(operation, package.name)
+        : passwordless ? transaction->startTrustedInstall(package.repository, package.name)
+        : transaction->start(operation, {nativeTarget});
     if (!started) { progress->close(); transaction->deleteLater(); QMessageBox::warning(this, QStringLiteral("Programs Center"), QStringLiteral("The software change could not be started.")); }
     else progress->show();
 }

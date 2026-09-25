@@ -9,6 +9,7 @@ class SourceBadge final : public QFrame {
 public:
     explicit SourceBadge(SoftwareSource source, QWidget *parent = nullptr);
     SoftwareSource source() const { return m_source; }
+    void setSource(SoftwareSource source);
 
 private:
     SoftwareSource m_source;

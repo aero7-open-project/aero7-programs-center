@@ -6,6 +6,7 @@
 #include <AppStreamQt/launchable.h>
 #include <AppStreamQt/pool.h>
 #include <QDirIterator>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -28,6 +29,18 @@ QString appStreamIcon(const AppStream::Component &component)
 {
  auto icon=component.icon(QSize(64,64));
  if(icon.isEmpty()) icon=component.iconStock();
+ for(const QString &candidate:{icon.filename(),icon.name()}) {
+  if(candidate.isEmpty())continue;
+  if(QFileInfo(candidate).isAbsolute() && QFileInfo::exists(candidate))return candidate;
+  if(icon.kind()==AppStream::Icon::KindCached && !component.origin().isEmpty()) {
+   for(const QString &root:QStandardPaths::standardLocations(QStandardPaths::GenericDataLocation))
+    for(const int size:{64,128,48}) {
+     const QString path=QDir(root).filePath(QStringLiteral("swcatalog/icons/%1/%2x%2/%3")
+                                           .arg(component.origin()).arg(size).arg(candidate));
+     if(QFileInfo::exists(path))return path;
+    }
+  }
+ }
  if(!icon.filename().isEmpty()) return icon.filename();
  if(!icon.name().isEmpty()) return icon.name();
  return {};
@@ -65,6 +78,7 @@ void Metadata::load(const QStringList &roots,bool includeAppStream){
  m_entries.clear();
  m_flatpaks.clear();
  m_appStreamError.clear();
+ m_nativeCatalogAvailable=false;
  for(const QString &root:roots){
   QDirIterator it(root,{"*.desktop"},QDir::Files); while(it.hasNext()){
    QSettings f(it.next(),QSettings::IniFormat); f.beginGroup("Desktop Entry"); if(f.value("NoDisplay").toBool()||f.value("Hidden").toBool())continue;
@@ -85,8 +99,23 @@ void Metadata::load(const QStringList &roots,bool includeAppStream){
  }
  if(!includeAppStream)return;
 
+ for(const QString &root:QStandardPaths::standardLocations(QStandardPaths::GenericDataLocation)) {
+  const QDir catalog(QDir(root).filePath(QStringLiteral("swcatalog/xml")));
+  if(catalog.exists(QStringLiteral("extra.xml.gz")) || catalog.exists(QStringLiteral("extra.xml"))
+     || catalog.exists(QStringLiteral("core.xml.gz")) || catalog.exists(QStringLiteral("core.xml"))) {
+   m_nativeCatalogAvailable=true;
+   break;
+  }
+ }
+
  AppStream::Pool pool;
  pool.setLocale(QStringLiteral("en_US"));
+ for(const QString &root:QStandardPaths::standardLocations(QStandardPaths::GenericDataLocation)) {
+  if(QDir(root).canonicalPath()==QStringLiteral("/usr/share"))continue;
+  const QDir catalog(QDir(root).filePath(QStringLiteral("swcatalog/xml")));
+  if(catalog.exists(QStringLiteral("extra.xml.gz")) || catalog.exists(QStringLiteral("extra.xml")))
+   pool.addExtraDataLocation(catalog.absolutePath(),AppStream::Metadata::FormatStyleCatalog);
+ }
  AppStream::Pool::Flags flags(AppStream::Pool::FlagLoadOsCatalog);
  flags.setFlag(AppStream::Pool::FlagLoadOsMetainfo);
  flags.setFlag(AppStream::Pool::FlagLoadOsDesktopFiles);

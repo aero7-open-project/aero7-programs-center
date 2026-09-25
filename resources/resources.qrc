@@ -1,1 +1,1 @@
-<RCC><qresource prefix="/"><file alias="icons/aero7-programs-center.png">icons/aero7-programs-center.png</file><file alias="catalog/sources.json">../catalog/sources.json</file></qresource></RCC>
+<RCC><qresource prefix="/"><file alias="icons/aero7-programs-center.png">icons/aero7-programs-center.png</file><file alias="catalog/sources.json">../catalog/sources.json</file><file alias="catalog/featured.json">../catalog/featured.json</file></qresource></RCC>
