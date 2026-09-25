@@ -376,8 +376,7 @@ bool MainWindow::trustedInstallAllowed() const
     QProcess check;
     check.start(QStringLiteral("pkcheck"), {QStringLiteral("--action-id"),
         QStringLiteral("org.aero7.programscenter.trusted-install"),
-        QStringLiteral("--process"), QString::number(QCoreApplication::applicationPid()),
-        QStringLiteral("--disable-internal-agent")});
+        QStringLiteral("--process"), QString::number(QCoreApplication::applicationPid())});
     return check.waitForFinished(2500) && check.exitStatus() == QProcess::NormalExit
         && check.exitCode() == 0;
 }
