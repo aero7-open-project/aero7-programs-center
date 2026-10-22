@@ -3,12 +3,16 @@
 #include "ui/WrappingGridLayout.h"
 #include <QCheckBox>
 #include <QLabel>
+#include <QGroupBox>
+#include <QDialog>
 #include <QListWidget>
+#include <QPushButton>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSettings>
 #include <QStackedWidget>
 #include <QTemporaryDir>
+#include <QToolButton>
 #include <QtTest>
 
 class HomeLayoutTest : public QObject {
@@ -80,23 +84,38 @@ private slots:
         QCOMPARE(layout->count(), 1);
         QVERIFY(host.rect().contains(layout->itemAt(0)->geometry()));
     }
-    void softwareSourcesNavigation() {
+    void settingsOpensSeparateWindow() {
         MainWindow window(parseDeepLink({"app", "--home"}));
         auto *sidebar = window.findChild<QListWidget *>("sidebar");
         auto *pages = window.findChild<QStackedWidget *>();
         QVERIFY(sidebar);
         QVERIFY(pages);
-        QListWidgetItem *sourceItem = nullptr;
+        QToolButton *settingsButton = nullptr;
+        for (auto *button : window.findChildren<QToolButton *>())
+            if (button->text() == "Settings") settingsButton = button;
+        QVERIFY(settingsButton);
         for (int row = 0; row < sidebar->count(); ++row)
-            if (sidebar->item(row)->text() == "Software Sources") sourceItem = sidebar->item(row);
-        QVERIFY(sourceItem);
-        const QRect target = sidebar->visualItemRect(sourceItem);
-        QTest::mouseClick(sidebar->viewport(), Qt::LeftButton, Qt::NoModifier, target.center());
-        QCOMPARE(pages->currentWidget()->objectName(), QString("settingsScroll"));
-        const auto toggles = pages->currentWidget()->findChildren<QCheckBox *>();
-        QCOMPARE(toggles.size(), 6);
-        QVERIFY(!toggles.at(0)->isEnabled());
-        QVERIFY(!toggles.at(1)->isEnabled());
+            QVERIFY(sidebar->item(row)->text() != "Software Sources");
+        settingsButton->click();
+        auto *settingsWindow = window.findChild<QDialog *>("settingsWindow");
+        QVERIFY(settingsWindow);
+        QVERIFY(settingsWindow->isWindow());
+        QVERIFY(settingsWindow->isVisible());
+        QCOMPARE(pages->currentWidget()->objectName(), QString("homeScroll"));
+        for (const QString source : {"Chaotic-AUR", "CachyOS Applications", "Flathub"}) {
+            QGroupBox *box = nullptr;
+            for (auto *candidate : settingsWindow->findChildren<QGroupBox *>())
+                if (candidate->title() == source) box = candidate;
+            QVERIFY(box);
+            auto *toggle = box->findChild<QCheckBox *>();
+            QVERIFY(toggle);
+            QVERIFY(!toggle->isChecked());
+        }
+        QVERIFY(settingsWindow->findChildren<QPushButton *>().size() >= 2);
+        settingsWindow->close();
+        QVERIFY(!settingsWindow->isVisible());
+        settingsButton->click();
+        QVERIFY(settingsWindow->isVisible());
     }
 };
 QTEST_MAIN(HomeLayoutTest)

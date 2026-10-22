@@ -95,7 +95,6 @@ QPushButton:pressed { background: #d9edf9; }
 QPushButton:disabled { color: #888; border-color: #c8c8c8; background: #f2f2f2; }
 QPushButton#taskLink { min-height: 19px; border: 0; padding: 2px 2px; text-align: left; color: #1f4e99; background: transparent; }
 QPushButton#taskLink:hover { color: #0033aa; text-decoration: underline; }
-QFrame#rightPane { background: #f4f8fc; border-left: 1px solid #c7d5df; }
 QFrame#taskBox { background: transparent; border: 0; }
 QTreeWidget { border: 0; background: white; alternate-background-color: white; outline: 0; }
 QTreeWidget::item { min-height: 30px; border-bottom: 1px solid #eeeeee; }

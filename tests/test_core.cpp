@@ -2,6 +2,7 @@
 #include "metadata/Metadata.h"
 #include "models/Package.h"
 #include "sources/SourceCatalog.h"
+#include "sources/SourceRegistration.h"
 #include <QFile>
 #include <QTemporaryDir>
 #include <QtTest>
@@ -11,6 +12,7 @@ private slots:
  void critical(){QVERIFY(isCriticalPackage("pacman"));QVERIFY(isCriticalPackage("linux-zen"));QVERIFY(!isCriticalPackage("vlc"));}
  void sources(){QCOMPARE(friendlyRepository("aero7"),QString("Aero7"));QCOMPARE(friendlyRepository("extra"),QString("Arch Linux"));}
  void sourceClassification(){QCOMPARE(SourcePolicy::fromRepository("core-testing"),SoftwareSource::Arch);QCOMPARE(SourcePolicy::fromRepository("vendor-testing"),SoftwareSource::Unknown);QVERIFY(SourcePolicy::isThirdParty(SoftwareSource::Flathub));QVERIFY(!SourcePolicy::isThirdParty(SoftwareSource::Aero7));}
+ void sourceRegistration(){QVERIFY(SourceRegistration::validName("myrepo"));QVERIFY(!SourceRegistration::validName("aero7"));QVERIFY(!SourceRegistration::validName("chaotic-aur-copy"));QVERIFY(SourceRegistration::validFlatpakRepo("myremote","https://example.org/my.flatpakrepo","[Flatpak Repo]\nUrl=https://example.org/repo/\nGPGKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\n"));QVERIFY(!SourceRegistration::validFlatpakRepo("arch","https://example.org/my.flatpakrepo","[Flatpak Repo]\nUrl=https://example.org/repo/\nGPGKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\n"));QVERIFY(!SourceRegistration::validFlatpakRepo("myremote","http://example.org/my.flatpakrepo","[Flatpak Repo]\nUrl=https://example.org/repo/\nGPGKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\n"));QVERIFY(!SourceRegistration::validFlatpakRepo("myremote","https://example.org/my.flatpakrepo","[Flatpak Repo]\nUrl=https://example.org/repo/\n"));}
  void categories(){QCOMPARE(Metadata::mapCategory({"Network","WebBrowser"}),QString("Internet"));QCOMPARE(Metadata::mapCategory({"AudioVideo"}),QString("Multimedia"));}
  void search(){Package p;p.displayName="LibreOffice";p.name="libreoffice-fresh";p.summary="Office suite";QVERIFY(p.searchableText().contains("office"));}
  void deepLinks(){auto d=parseDeepLink({"app","--package","vlc"});QCOMPARE(d.page,DeepLink::PackageDetails);QCOMPARE(d.value,QString("vlc"));QCOMPARE(parseDeepLink({"app","--sources"}).page,DeepLink::Sources);}

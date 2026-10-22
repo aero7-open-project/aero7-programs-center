@@ -5,6 +5,7 @@
 #include <QIcon>
 #include <QSize>
 #include <QString>
+#include "sources/SourcePolicy.h"
 
 // Aero7 application chrome is sourced from the pinned Windows 7 Aero icon
 // pack and embedded at build time. The active desktop theme is never queried.
@@ -60,6 +61,20 @@ inline QIcon resource(const QString &path, const QString &fallback)
     if (!result.isNull()) return result;
     qWarning().noquote() << "[Aero7 Icons] Missing resource:" << path;
     return icon(fallback);
+}
+
+inline QIcon sourceIcon(SoftwareSource source)
+{
+    QString name;
+    switch (source) {
+    case SoftwareSource::Aero7: name = QStringLiteral("aero7"); break;
+    case SoftwareSource::Arch: name = QStringLiteral("arch"); break;
+    case SoftwareSource::ChaoticAur: name = QStringLiteral("chaotic-aur"); break;
+    case SoftwareSource::CachyOs: name = QStringLiteral("cachyos"); break;
+    case SoftwareSource::Flathub: name = QStringLiteral("flathub"); break;
+    default: return icon(QStringLiteral("warning"));
+    }
+    return resource(QStringLiteral(":/sources/%1.png").arg(name), QStringLiteral("warning"));
 }
 
 } // namespace Aero7Icons

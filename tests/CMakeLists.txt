@@ -6,7 +6,7 @@ add_executable(programs-center-offline-backend test_offline_backend.cpp)
 target_link_libraries(programs-center-offline-backend PRIVATE programs-center-core Qt6::Test)
 add_test(NAME programs-center-offline-backend COMMAND programs-center-offline-backend)
 
-add_executable(programs-center-icon-independence test_icon_independence.cpp)
+add_executable(programs-center-icon-independence test_icon_independence.cpp ../resources/resources.qrc)
 qt_add_resources(programs-center-icon-independence "aero7-programs-pack-icons-test"
   PREFIX "/aero7/pack"
   BASE "${CMAKE_SOURCE_DIR}/resources/icons/pack"
@@ -30,3 +30,5 @@ add_test(NAME programs-center-home-layout COMMAND programs-center-home-layout)
 set_tests_properties(programs-center-home-layout PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 add_test(NAME programs-center-icon-policy
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_icon_policy.py)
+add_test(NAME programs-center-source-helper
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_source_helper.py)

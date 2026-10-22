@@ -20,6 +20,7 @@ add_library(programs-center-core
   src/models/Package.cpp
   src/sources/SourcePolicy.cpp
   src/sources/SourceCatalog.cpp
+  src/sources/SourceRegistration.cpp
   src/DeepLink.cpp
 )
 target_include_directories(programs-center-core PUBLIC src)
@@ -52,7 +53,8 @@ install(FILES ASSET-PROVENANCE.md
   DESTINATION share/doc/aero7-programs-center)
 install(PROGRAMS helper/aero7-programs-center-helper DESTINATION lib/aero7-programs-center)
 install(PROGRAMS helper/aero7-programs-center-trusted-installer
-  helper/aero7-programs-center-permissions DESTINATION lib/aero7-programs-center)
+  helper/aero7-programs-center-permissions
+  helper/aero7-programs-center-sources DESTINATION lib/aero7-programs-center)
 install(FILES helper/org.aero7.programscenter.policy DESTINATION share/polkit-1/actions)
 
 enable_testing()

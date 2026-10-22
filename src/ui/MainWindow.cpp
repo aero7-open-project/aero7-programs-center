@@ -7,6 +7,7 @@
 #include "Win7Style.h"
 #include "WrappingGridLayout.h"
 #include "backend/PackageTransaction.h"
+#include "sources/SourceRegistration.h"
 
 #include <QCheckBox>
 #include <QCloseEvent>
@@ -14,15 +15,21 @@
 #include <QCoreApplication>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDir>
+#include <QEventLoop>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHeaderView>
+#include <QFile>
 #include <QFileInfo>
 #include <QHash>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMessageBox>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QProcess>
 #include <QProgressDialog>
 #include <QPushButton>
@@ -38,6 +45,8 @@
 #include <QTreeWidget>
 #include <QVBoxLayout>
 #include <QTimer>
+#include <QTemporaryFile>
+#include <QUrl>
 
 #include <algorithm>
 
@@ -58,12 +67,12 @@ QLabel *sectionHeading(const QString &text)
     return label;
 }
 
-QToolButton *commandButton(const QString &text, const QString &icon = {})
+QToolButton *commandButton(const QString &text, const QString &icon)
 {
     auto *button = new QToolButton;
     button->setText(text);
-    if (!icon.isEmpty()) button->setIcon(Aero7Icons::icon(icon));
-    button->setToolButtonStyle(icon.isEmpty() ? Qt::ToolButtonTextOnly : Qt::ToolButtonTextBesideIcon);
+    button->setIcon(Aero7Icons::icon(icon));
+    button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     button->setCursor(Qt::PointingHandCursor);
     return button;
 }
@@ -89,7 +98,10 @@ MainWindow::MainWindow(const DeepLink &link, QWidget *parent)
     if (width() < 900) resize(1180, 760);
     if (link.page == DeepLink::Updates) showUpdates();
     else if (link.page == DeepLink::Installed) showInstalled();
-    else if (link.page == DeepLink::Sources) showSettings();
+    else if (link.page == DeepLink::Sources) {
+        showHome();
+        QTimer::singleShot(0, this, &MainWindow::showSettings);
+    }
     else if (link.page == DeepLink::Search) showResults(link.value);
     else if (link.page == DeepLink::PackageDetails) showDetails(link.value);
     else if (link.page == DeepLink::Category) showResults({}, link.value);
@@ -133,26 +145,14 @@ void MainWindow::buildUi()
     shellLayout->setSpacing(0);
     QHBoxLayout *commands = nullptr;
     shellLayout->addWidget(Win7Style::commandBar(&commands));
-    auto *organize = commandButton(QStringLiteral("Organize  ▾"));
     auto *home = commandButton(QStringLiteral("Home"), QStringLiteral("home"));
-    auto *discover = commandButton(QStringLiteral("Discover"), QStringLiteral("search"));
+    auto *discover = commandButton(QStringLiteral("Find a program"), QStringLiteral("search"));
     auto *updates = commandButton(QStringLiteral("Check for updates"), QStringLiteral("update"));
-    auto *settings = commandButton(QStringLiteral("Software sources"), QStringLiteral("settings"));
-    commands->addWidget(organize);
-    commands->addWidget(home);
-    commands->addWidget(discover);
-    commands->addWidget(updates);
-    commands->addWidget(settings);
+    auto *installed = commandButton(QStringLiteral("Installed programs"), QStringLiteral("package"));
+    auto *settings = commandButton(QStringLiteral("Settings"), QStringLiteral("settings"));
+    auto *control = commandButton(QStringLiteral("Control Panel"), QStringLiteral("settings"));
+    for (auto *button : {home, discover, updates, installed, settings, control}) commands->addWidget(button);
     commands->addStretch();
-    m_sourceFilter = new QComboBox;
-    m_sourceFilter->addItem(QStringLiteral("All sources"), QStringLiteral("all"));
-    for (const auto &source : SourcePolicy::descriptors()) {
-        if (source.source != SoftwareSource::Local && source.source != SoftwareSource::Unknown)
-            m_sourceFilter->addItem(source.name, source.id);
-    }
-    commands->addWidget(new QLabel(QStringLiteral("Source:")));
-    commands->addWidget(m_sourceFilter);
-
     auto *body = new QWidget;
     auto *bodyLayout = new QHBoxLayout(body);
     bodyLayout->setContentsMargins(0, 0, 0, 0);
@@ -160,28 +160,18 @@ void MainWindow::buildUi()
     m_sidebar = new QListWidget;
     m_sidebar->setObjectName(QStringLiteral("sidebar"));
     m_sidebar->setFixedWidth(205);
-    m_sidebar->addItem(new QListWidgetItem(Aero7Icons::icon(QStringLiteral("home")), QStringLiteral("Home")));
     auto *categoryHeading = new QListWidgetItem(QStringLiteral("CATEGORIES"));
     categoryHeading->setFlags(Qt::NoItemFlags);
     m_sidebar->addItem(categoryHeading);
     for (const auto *category : {"Internet", "Multimedia", "Graphics & Photos", "Office", "Games", "Utilities", "System Tools", "Education", "Developer Tools"})
         m_sidebar->addItem(new QListWidgetItem(Aero7Icons::icon(QString::fromLatin1(category)), QString::fromLatin1(category)));
-    auto *manageHeading = new QListWidgetItem(QStringLiteral("MANAGEMENT"));
-    manageHeading->setFlags(Qt::NoItemFlags);
-    m_sidebar->addItem(manageHeading);
-    m_sidebar->addItem(new QListWidgetItem(Aero7Icons::icon(QStringLiteral("update")), QStringLiteral("Updates")));
-    m_sidebar->addItem(new QListWidgetItem(Aero7Icons::icon(QStringLiteral("package")), QStringLiteral("Installed Programs")));
-    m_sidebar->addItem(new QListWidgetItem(Aero7Icons::icon(QStringLiteral("settings")), QStringLiteral("Software Sources")));
     bodyLayout->addWidget(m_sidebar);
     m_pages = new QStackedWidget;
     m_home = makeHome();
     m_results = makeListPage();
-    m_settings = makeSettingsPage();
     m_pages->addWidget(m_home);
     m_pages->addWidget(m_results);
-    m_pages->addWidget(m_settings);
     bodyLayout->addWidget(m_pages, 1);
-    bodyLayout->addWidget(makeRightPane());
     shellLayout->addWidget(body, 1);
     setCentralWidget(shell);
 
@@ -189,9 +179,11 @@ void MainWindow::buildUi()
     statusBar()->addWidget(m_status, 1);
     statusBar()->addPermanentWidget(new QLabel(QStringLiteral("Aero7 Programs Center — Beta")));
     connect(home, &QToolButton::clicked, this, &MainWindow::showHome);
-    connect(discover, &QToolButton::clicked, this, [this] { showResults(); });
+    connect(discover, &QToolButton::clicked, this, [this] { showResults(); m_search->setFocus(); });
     connect(updates, &QToolButton::clicked, this, &MainWindow::showUpdates);
+    connect(installed, &QToolButton::clicked, this, &MainWindow::showInstalled);
     connect(settings, &QToolButton::clicked, this, &MainWindow::showSettings);
+    connect(control, &QToolButton::clicked, this, [] { QProcess::startDetached(QStringLiteral("aero7-control-panel"), {}); });
     connect(back, &QAction::triggered, this, &MainWindow::showHome);
     auto *searchDelay = new QTimer(this);
     searchDelay->setSingleShot(true);
@@ -204,11 +196,7 @@ void MainWindow::buildUi()
     });
     connect(m_sidebar, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) {
         const QString text = item->text();
-        if (text == QStringLiteral("Home")) showHome();
-        else if (text == QStringLiteral("Updates")) showUpdates();
-        else if (text == QStringLiteral("Installed Programs")) showInstalled();
-        else if (text == QStringLiteral("Software Sources")) showSettings();
-        else if (item->flags() != Qt::NoItemFlags) showResults({}, text);
+        if (item->flags() != Qt::NoItemFlags) showResults({}, text);
     });
     new QShortcut(QKeySequence::Find, this, [this] { m_search->setFocus(); m_search->selectAll(); });
     new QShortcut(QKeySequence::Refresh, this, [this] { loadData(); showHome(); });
@@ -224,8 +212,8 @@ QWidget *MainWindow::makeHome()
     auto *content = new QWidget;
     content->setObjectName(QStringLiteral("page"));
     auto *layout = new QVBoxLayout(content);
-    layout->setContentsMargins(28, 18, 28, 24);
-    layout->setSpacing(10);
+    layout->setContentsMargins(32, 23, 34, 28);
+    layout->setSpacing(12);
     layout->addWidget(Win7Style::pageTitle(QStringLiteral("Get programs for Aero7")));
     layout->addWidget(Win7Style::instruction(QStringLiteral("Find trusted desktop programs, install updates, and manage software sources.")));
     layout->addWidget(Win7Style::separator());
@@ -251,11 +239,15 @@ QWidget *MainWindow::makeHome()
         categories->addWidget(button);
     }
     layout->addLayout(categories);
-    layout->addWidget(sectionHeading(QStringLiteral("Recommended programs")));
+    m_recommendedSection = new QWidget;
+    auto *recommendedLayout = new QVBoxLayout(m_recommendedSection);
+    recommendedLayout->setContentsMargins(0, 0, 0, 0);
+    recommendedLayout->addWidget(sectionHeading(QStringLiteral("Recommended programs")));
     auto *recommended = new QWidget;
     recommended->setObjectName(QStringLiteral("recommendedGrid"));
     recommended->setLayout(new WrappingGridLayout);
-    layout->addWidget(recommended);
+    recommendedLayout->addWidget(recommended);
+    layout->addWidget(m_recommendedSection);
     layout->addStretch();
     scroll->setWidget(content);
     return scroll;
@@ -273,6 +265,19 @@ QWidget *MainWindow::makeListPage()
     layout->addWidget(title);
     layout->addWidget(Win7Style::instruction(QStringLiteral("Select a program to view details or double-click to open it.")));
     layout->addWidget(Win7Style::separator());
+    m_filterRow = new QWidget;
+    auto *filterRow = new QHBoxLayout(m_filterRow);
+    filterRow->setContentsMargins(0, 0, 0, 0);
+    filterRow->addStretch();
+    filterRow->addWidget(new QLabel(QStringLiteral("Source:")));
+    m_sourceFilter = new QComboBox;
+    m_sourceFilter->addItem(QStringLiteral("All sources"), QStringLiteral("all"));
+    for (const auto &source : SourcePolicy::descriptors())
+        if (source.source != SoftwareSource::Local && source.source != SoftwareSource::Unknown)
+            m_sourceFilter->addItem(source.name, source.id);
+    m_sourceFilter->addItem(QStringLiteral("External sources"), QStringLiteral("unknown"));
+    filterRow->addWidget(m_sourceFilter);
+    layout->addWidget(m_filterRow);
     m_table = new QTreeWidget;
     m_table->setColumnCount(5);
     m_table->setHeaderLabels({QStringLiteral("Name"), QStringLiteral("Version"), QStringLiteral("Size"), QStringLiteral("Source"), QStringLiteral("Status")});
@@ -292,29 +297,63 @@ QWidget *MainWindow::makeSettingsPage()
     auto *content = new QWidget;
     content->setObjectName(QStringLiteral("page"));
     auto *layout = new QVBoxLayout(content);
-    layout->setContentsMargins(28, 18, 38, 28);
-    layout->setSpacing(9);
-    layout->addWidget(Win7Style::pageTitle(QStringLiteral("Software Sources")));
-    layout->addWidget(Win7Style::instruction(QStringLiteral("Choose where Programs Center may find applications. Aero7 and Arch Linux stay enabled to keep the system safe and supported.")));
+    layout->setContentsMargins(32, 23, 38, 28);
+    layout->setSpacing(11);
+    layout->addWidget(Win7Style::pageTitle(QStringLiteral("Settings")));
+    layout->addWidget(Win7Style::instruction(QStringLiteral("Manage software sources, install permissions and browsing preferences.")));
     layout->addWidget(Win7Style::separator());
+    layout->addWidget(sectionHeading(QStringLiteral("Software sources")));
+    layout->addWidget(Win7Style::instruction(QStringLiteral("Official sources are managed by the system. Optional sources show available software only after you opt in.")));
     auto addSource = [this, layout](SoftwareSource source, bool fixed) {
         const auto info = SourcePolicy::descriptor(source);
         auto *group = new QGroupBox(info.name);
         auto *row = new QHBoxLayout(group);
         auto *icon = new QLabel;
-        icon->setPixmap(Aero7Icons::icon(info.iconKey).pixmap(32, 32));
+        icon->setPixmap(Aero7Icons::sourceIcon(source).pixmap(68, 38));
+        icon->setFixedSize(70, 42);
+        icon->setAlignment(Qt::AlignCenter);
         row->addWidget(icon, 0, Qt::AlignTop);
-        auto *description = new QLabel(info.description);
-        description->setWordWrap(true);
-        row->addWidget(description, 1);
-        auto *toggle = new QCheckBox(fixed ? QStringLiteral("Always enabled") : QStringLiteral("Enabled"));
-        toggle->setChecked(fixed || sourceEnabled(source));
-        toggle->setEnabled(!fixed);
-        row->addWidget(toggle, 0, Qt::AlignTop);
-        if (!fixed) connect(toggle, &QCheckBox::toggled, this, [this, info](bool enabled) {
+        auto *copy = new QVBoxLayout;
+        auto *description = Win7Style::instruction(info.description);
+        copy->addWidget(description);
+        copy->addWidget(Win7Style::instruction(fixed ? QStringLiteral("Managed by the system")
+            : QStringLiteral("External source · Apps and updates may be maintained by another project.")));
+        row->addLayout(copy, 1);
+        if (fixed) {
+            const bool available = source == SoftwareSource::Aero7
+                ? m_backend.repositories().contains(QStringLiteral("aero7"))
+                : m_backend.repositories().contains(QStringLiteral("core"))
+                  || m_backend.repositories().contains(QStringLiteral("extra"));
+            auto *status = new QWidget;
+            auto *statusLayout = new QHBoxLayout(status);
+            statusLayout->setContentsMargins(0, 0, 0, 0);
+            statusLayout->setSpacing(7);
+            auto *label = new QLabel(available ? QStringLiteral("Official source\nAvailable")
+                                                 : QStringLiteral("Official source\nNot configured"));
+            label->setObjectName(QStringLiteral("officialSourceStatus"));
+            statusLayout->addWidget(label);
+            if (available) {
+                auto *check = new QLabel;
+                check->setObjectName(QStringLiteral("officialSourceCheck"));
+                check->setPixmap(Aero7Icons::icon(QStringLiteral("success")).pixmap(22, 22));
+                check->setToolTip(QStringLiteral("Official source configured on this system"));
+                statusLayout->addWidget(check);
+            }
+            row->addWidget(status, 0, Qt::AlignRight | Qt::AlignVCenter);
+        } else {
+            auto *toggle = new QCheckBox(QStringLiteral("Show apps"));
+            toggle->setChecked(sourceEnabled(source));
+            row->addWidget(toggle, 0, Qt::AlignRight | Qt::AlignVCenter);
+            connect(toggle, &QCheckBox::toggled, this, [this, info, toggle](bool enabled) {
+            if (enabled && QMessageBox::warning(this, QStringLiteral("Enable external source?"),
+                QStringLiteral("%1 is maintained outside Aero7 and Arch Linux. Its packages may change system software. Programs Center will show its available apps only if the source is already configured; pacman and Flatpak signature rules still apply.\n\nShow apps from this source?").arg(info.name),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) {
+                QSignalBlocker block(toggle); toggle->setChecked(false); return;
+            }
             QSettings(QStringLiteral("Aero7"), QStringLiteral("ProgramsCenter")).setValue(QStringLiteral("sources/%1").arg(info.id), enabled);
             loadData();
-        });
+            });
+        }
         layout->addWidget(group);
     };
     addSource(SoftwareSource::Aero7, true);
@@ -322,9 +361,17 @@ QWidget *MainWindow::makeSettingsPage()
     addSource(SoftwareSource::ChaoticAur, false);
     addSource(SoftwareSource::CachyOs, false);
     addSource(SoftwareSource::Flathub, false);
-    layout->addWidget(Win7Style::instruction(QStringLiteral("Programs Center never runs yay or paru and never enables a full CachyOS repository. CachyOS Applications is limited to Aero7's reviewed allowlist. Disabling a source hides available programs but keeps installed programs manageable.")));
+    layout->addWidget(Win7Style::instruction(QStringLiteral("Additional native repositories require administrator approval and existing trusted signing keys. CachyOS Applications stays within the Aero7 allowlist. Installed programs remain manageable when a source is hidden.")));
+    auto *custom = new QWidget;
+    m_customSourcesLayout = new QVBoxLayout(custom);
+    m_customSourcesLayout->setContentsMargins(0, 0, 0, 0);
+    layout->addWidget(custom);
+    auto *addButton = new QPushButton(Aero7Icons::icon(QStringLiteral("install")), QStringLiteral("Add source…"));
+    layout->addWidget(addButton, 0, Qt::AlignLeft);
+    connect(addButton, &QPushButton::clicked, this, &MainWindow::addSource);
+    refreshCustomSources();
     layout->addWidget(Win7Style::separator());
-    layout->addWidget(Win7Style::pageTitle(QStringLiteral("Install permissions")));
+    layout->addWidget(sectionHeading(QStringLiteral("Install permissions")));
     m_passwordlessCheck = new QCheckBox(QStringLiteral("Install trusted Aero7 and Arch applications without asking for a password"));
     m_passwordlessCheck->setObjectName(QStringLiteral("trustedInstallCheck"));
     m_passwordlessCheck->setChecked(trustedInstallAllowed());
@@ -334,41 +381,285 @@ QWidget *MainWindow::makeSettingsPage()
     if (!m_passwordlessCheck->isEnabled())
         layout->addWidget(Win7Style::instruction(QStringLiteral("Install the packaged Programs Center to enable this setting.")));
     connect(m_passwordlessCheck, &QCheckBox::toggled, this, &MainWindow::changeTrustedInstallPermission);
+    layout->addWidget(Win7Style::separator());
+    layout->addWidget(sectionHeading(QStringLiteral("Browsing")));
+    auto *recommendedCheck = new QCheckBox(QStringLiteral("Show recommended programs on Home"));
+    recommendedCheck->setChecked(QSettings(QStringLiteral("Aero7"), QStringLiteral("ProgramsCenter"))
+        .value(QStringLiteral("browsing/showRecommended"), true).toBool());
+    layout->addWidget(recommendedCheck);
+    connect(recommendedCheck, &QCheckBox::toggled, this, [this](bool checked) {
+        QSettings(QStringLiteral("Aero7"), QStringLiteral("ProgramsCenter"))
+            .setValue(QStringLiteral("browsing/showRecommended"), checked);
+        m_recommendedSection->setVisible(checked);
+    });
+    m_recommendedSection->setVisible(recommendedCheck->isChecked());
+    layout->addWidget(Win7Style::separator());
+    layout->addWidget(sectionHeading(QStringLiteral("Safety notices")));
+    layout->addWidget(Win7Style::instruction(QStringLiteral("Show the first-install explanation again for every external source.")));
+    auto *resetNotices = new QPushButton(QStringLiteral("Reset dismissed notices"));
+    layout->addWidget(resetNotices, 0, Qt::AlignLeft);
+    connect(resetNotices, &QPushButton::clicked, this, [this] {
+        QSettings settings(QStringLiteral("Aero7"), QStringLiteral("ProgramsCenter"));
+        settings.remove(QStringLiteral("notices"));
+        QMessageBox::information(this, QStringLiteral("Programs Center"), QStringLiteral("External-source notices will appear again before installs."));
+    });
     layout->addStretch();
     scroll->setWidget(content);
     return scroll;
 }
 
-QWidget *MainWindow::makeRightPane()
-{
-    auto *pane = new QFrame;
-    pane->setObjectName(QStringLiteral("rightPane"));
-    pane->setFixedWidth(230);
-    auto *layout = new QVBoxLayout(pane);
-    layout->setContentsMargins(15, 18, 15, 18);
-    layout->setSpacing(7);
-    layout->addWidget(sectionHeading(QStringLiteral("See also")));
-    auto *install = taskLink(QStringLiteral("Find a program"), QStringLiteral("install"));
-    auto *updates = taskLink(QStringLiteral("Check for updates"), QStringLiteral("update"));
-    auto *installed = taskLink(QStringLiteral("Installed programs"), QStringLiteral("package"));
-    auto *sources = taskLink(QStringLiteral("Software sources"), QStringLiteral("settings"));
-    auto *control = taskLink(QStringLiteral("Control Panel"), QStringLiteral("settings"));
-    for (auto *button : {install, updates, installed, sources, control}) layout->addWidget(button);
-    layout->addStretch();
-    connect(install, &QPushButton::clicked, this, [this] { showResults(); m_search->setFocus(); });
-    connect(updates, &QPushButton::clicked, this, &MainWindow::showUpdates);
-    connect(installed, &QPushButton::clicked, this, &MainWindow::showInstalled);
-    connect(sources, &QPushButton::clicked, this, &MainWindow::showSettings);
-    connect(control, &QPushButton::clicked, this, [] { QProcess::startDetached(QStringLiteral("aero7-control-panel"), {}); });
-    return pane;
-}
-
 bool MainWindow::sourceEnabled(SoftwareSource source) const
 {
-    if (source == SoftwareSource::Aero7 || source == SoftwareSource::Arch || source == SoftwareSource::Local || source == SoftwareSource::Unknown) return true;
+    if (source == SoftwareSource::Aero7 || source == SoftwareSource::Arch || source == SoftwareSource::Local) return true;
+    if (source == SoftwareSource::Unknown) return false;
     const auto info = SourcePolicy::descriptor(source);
-    const bool defaultValue = source == SoftwareSource::ChaoticAur;
-    return QSettings(QStringLiteral("Aero7"), QStringLiteral("ProgramsCenter")).value(QStringLiteral("sources/%1").arg(info.id), defaultValue).toBool();
+    return QSettings(QStringLiteral("Aero7"), QStringLiteral("ProgramsCenter")).value(QStringLiteral("sources/%1").arg(info.id), false).toBool();
+}
+
+bool MainWindow::sourceEnabled(const Package &package) const
+{
+    if (package.source != SoftwareSource::Unknown) return sourceEnabled(package.source);
+    if (!SourceRegistration::validName(package.repository)) return false;
+    const QString group = package.provider == PackageProvider::Flatpak
+        ? QStringLiteral("customFlatpak") : QStringLiteral("customNative");
+    return QSettings(QStringLiteral("Aero7"), QStringLiteral("ProgramsCenter"))
+        .value(QStringLiteral("%1/%2").arg(group, package.repository), false).toBool();
+}
+
+QString MainWindow::sourceLabel(const Package &package) const
+{
+    return package.source == SoftwareSource::Unknown
+        ? QStringLiteral("External: %1").arg(package.repository)
+        : SourcePolicy::descriptor(package.source).name;
+}
+
+void MainWindow::runSourceCommand(const QString &program, const QStringList &arguments,
+                                  const std::function<void()> &onSuccess,
+                                  const QString &cleanupPath)
+{
+    auto *process = new QProcess(this);
+    auto *progress = new QProgressDialog(QStringLiteral("Updating software sources…"), QString(), 0, 0, this);
+    progress->setWindowTitle(QStringLiteral("Programs Center"));
+    progress->setCancelButton(nullptr);
+    progress->setWindowModality(Qt::WindowModal);
+    connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
+        [this, process, progress, onSuccess, cleanupPath](int code, QProcess::ExitStatus status) {
+            progress->close(); progress->deleteLater();
+            const QString details = QString::fromUtf8(process->readAllStandardError()).trimmed();
+            process->deleteLater();
+            if (!cleanupPath.isEmpty()) QFile::remove(cleanupPath);
+            if (status == QProcess::NormalExit && code == 0) onSuccess();
+            else QMessageBox::warning(this, QStringLiteral("Source change failed"),
+                details.isEmpty() ? QStringLiteral("The source change was not completed.") : details.left(900));
+        });
+    process->start(program, arguments);
+    if (!process->waitForStarted(3000)) {
+        if (!cleanupPath.isEmpty()) QFile::remove(cleanupPath);
+        progress->deleteLater(); process->deleteLater();
+        QMessageBox::warning(this, QStringLiteral("Source change failed"),
+            QStringLiteral("The required source-management tool could not be started."));
+        return;
+    }
+    progress->show();
+}
+
+void MainWindow::refreshCustomSources()
+{
+    if (!m_customSourcesLayout) return;
+    while (auto *item = m_customSourcesLayout->takeAt(0)) {
+        delete item->widget(); delete item;
+    }
+    QFile managed(QStringLiteral("/etc/pacman.d/aero7-programs-center-repositories.conf"));
+    QStringList native;
+    if (managed.open(QIODevice::ReadOnly)) {
+        const QString text = QString::fromUtf8(managed.readAll());
+        const QRegularExpression heading(QStringLiteral("(?m)^\\[([a-z0-9][a-z0-9._-]*)\\]\\s*$"));
+        auto match = heading.globalMatch(text);
+        while (match.hasNext()) native.append(match.next().captured(1));
+    }
+    QSettings settings(QStringLiteral("Aero7"), QStringLiteral("ProgramsCenter"));
+    settings.beginGroup(QStringLiteral("customFlatpak"));
+    const QStringList flatpaks = settings.childKeys();
+    settings.endGroup();
+    if (native.isEmpty() && flatpaks.isEmpty()) {
+        m_customSourcesLayout->addWidget(Win7Style::instruction(QStringLiteral("No additional sources have been added.")));
+        return;
+    }
+    auto addRow = [this](const QString &name, bool flatpak) {
+        const QString group = flatpak ? QStringLiteral("customFlatpak") : QStringLiteral("customNative");
+        auto *box = new QGroupBox(QStringLiteral("External %1: %2").arg(flatpak ? QStringLiteral("Flatpak remote") : QStringLiteral("native repository"), name));
+        auto *row = new QHBoxLayout(box);
+        auto *icon = new QLabel;
+        icon->setPixmap(Aero7Icons::sourceIcon(SoftwareSource::Unknown).pixmap(28, 28));
+        row->addWidget(icon);
+        auto *description = Win7Style::instruction(flatpak
+            ? QStringLiteral("User Flatpak remote · Signed apps from an external publisher")
+            : QStringLiteral("System pacman repository · Signed packages from an external publisher"));
+        row->addWidget(description, 1);
+        auto *visible = new QCheckBox(QStringLiteral("Show apps"));
+        visible->setChecked(QSettings(QStringLiteral("Aero7"), QStringLiteral("ProgramsCenter"))
+            .value(QStringLiteral("%1/%2").arg(group, name), false).toBool());
+        row->addWidget(visible);
+        connect(visible, &QCheckBox::toggled, this, [this, group, name, visible](bool checked) {
+            if (checked && QMessageBox::warning(this, QStringLiteral("Enable external source?"),
+                QStringLiteral("%1 is maintained outside Aero7 and Arch Linux. Its available applications and updates may affect your system. Show apps from this source?").arg(name),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) {
+                QSignalBlocker block(visible); visible->setChecked(false); return;
+            }
+            QSettings(QStringLiteral("Aero7"), QStringLiteral("ProgramsCenter"))
+                .setValue(QStringLiteral("%1/%2").arg(group, name), checked);
+            loadData();
+        });
+        auto *remove = new QPushButton(QStringLiteral("Remove…"));
+        row->addWidget(remove);
+        connect(remove, &QPushButton::clicked, this, [this, name, flatpak, group] {
+            const QString message = flatpak
+                ? QStringLiteral("Remove the user Flatpak remote %1? Installed apps may prevent Flatpak from removing it.").arg(name)
+                : QStringLiteral("Remove the managed pacman repository %1? Installed packages will remain installed. The system's other repositories are unchanged.").arg(name);
+            if (QMessageBox::question(this, QStringLiteral("Remove external source?"), message) != QMessageBox::Yes) return;
+            const QString program = flatpak ? QStringLiteral("flatpak") : QStringLiteral("pkexec");
+            const QStringList arguments = flatpak
+                ? QStringList{QStringLiteral("remote-delete"), QStringLiteral("--user"), name}
+                : QStringList{QStringLiteral("--disable-internal-agent"),
+                    QStringLiteral("/usr/lib/aero7-programs-center/aero7-programs-center-sources"),
+                    QStringLiteral("remove"), name};
+            runSourceCommand(program, arguments, [this, group, name] {
+                QSettings(QStringLiteral("Aero7"), QStringLiteral("ProgramsCenter"))
+                    .remove(QStringLiteral("%1/%2").arg(group, name));
+                loadData(); refreshCustomSources();
+            });
+        });
+        m_customSourcesLayout->addWidget(box);
+    };
+    for (const QString &name : native) addRow(name, false);
+    for (const QString &name : flatpaks) if (settings.value(QStringLiteral("customFlatpak/%1").arg(name)).isValid()) addRow(name, true);
+}
+
+void MainWindow::addSource()
+{
+    QDialog dialog(this);
+    dialog.setWindowTitle(QStringLiteral("Add software source"));
+    dialog.setMinimumWidth(560);
+    dialog.setStyleSheet(Win7Style::applicationStyleSheet());
+    auto *layout = new QVBoxLayout(&dialog);
+    layout->addWidget(Win7Style::instruction(QStringLiteral("External sources can publish packages and updates. Check the publisher, repository address and signing key before continuing.")));
+    auto *form = new QFormLayout;
+    auto *kind = new QComboBox;
+    kind->addItem(QStringLiteral("Signed native pacman repository"));
+    kind->addItem(QStringLiteral("User Flatpak remote (.flatpakrepo)"));
+    auto *name = new QLineEdit;
+    name->setPlaceholderText(QStringLiteral("example-repo"));
+    auto *url = new QLineEdit;
+    url->setPlaceholderText(QStringLiteral("https://example.org/repo/$arch"));
+    auto *fingerprint = new QLineEdit;
+    fingerprint->setPlaceholderText(QStringLiteral("40 hexadecimal characters; already trusted by pacman"));
+    form->addRow(QStringLiteral("Type:"), kind);
+    form->addRow(QStringLiteral("Source name:"), name);
+    form->addRow(QStringLiteral("Server / descriptor URL:"), url);
+    form->addRow(QStringLiteral("Trusted key fingerprint:"), fingerprint);
+    layout->addLayout(form);
+    auto *hint = Win7Style::instruction(QStringLiteral("Native repositories require a fully trusted signing key already in pacman's keyring. Both database and package signatures are required. This dialog never imports or trusts keys. New native package listings appear after the next full system refresh."));
+    layout->addWidget(hint);
+    connect(kind, &QComboBox::currentIndexChanged, &dialog, [fingerprint, hint, url](int index) {
+        fingerprint->setVisible(index == 0);
+        hint->setText(index == 0
+            ? QStringLiteral("Native repositories require a fully trusted signing key already in pacman's keyring. Both database and package signatures are required. This dialog never imports or trusts keys. New package listings appear after the next full system refresh.")
+            : QStringLiteral("Choose a publisher's HTTPS .flatpakrepo file containing a GPG key. Flatpak adds the remote only for your user. Programs Center will show the key fingerprint before adding it."));
+        url->setPlaceholderText(index == 0 ? QStringLiteral("https://example.org/repo/$arch")
+            : QStringLiteral("https://example.org/example.flatpakrepo"));
+    });
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    layout->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    if (dialog.exec() != QDialog::Accepted) return;
+    const QString sourceName = name->text().trimmed();
+    const QString address = url->text().trimmed();
+    if (kind->currentIndex() == 0) {
+        const QString key = fingerprint->text().remove(QLatin1Char(' ')).toUpper();
+        if (!SourceRegistration::validName(sourceName) || !QRegularExpression(QStringLiteral("^[A-F0-9]{40}$")).match(key).hasMatch()
+            || !address.startsWith(QStringLiteral("https://")) || address.contains(QRegularExpression(QStringLiteral("[\\s;#\\[\\]]")))) {
+            QMessageBox::warning(this, QStringLiteral("Invalid source"), QStringLiteral("Enter a unique lowercase source name, HTTPS Server URL and full 40-character signing-key fingerprint."));
+            return;
+        }
+        if (QMessageBox::warning(this, QStringLiteral("Review native repository"),
+            QStringLiteral("Add external repository %1?\n\nServer: %2\nReviewed trusted key: %3\n\nThe helper checks that this key is already fully trusted. Pacman may accept any key trusted by the system keyring; it does not pin this repository to one key. Both package and database signatures remain mandatory. Administrator authentication is required.").arg(sourceName, address, key),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
+        runSourceCommand(QStringLiteral("pkexec"), {QStringLiteral("--disable-internal-agent"),
+            QStringLiteral("/usr/lib/aero7-programs-center/aero7-programs-center-sources"),
+            QStringLiteral("add"), sourceName, address, key}, [this, sourceName] {
+                QSettings(QStringLiteral("Aero7"), QStringLiteral("ProgramsCenter"))
+                    .setValue(QStringLiteral("customNative/%1").arg(sourceName), true);
+                loadData(); refreshCustomSources();
+                QMessageBox::information(this, QStringLiteral("Source added"),
+                    QStringLiteral("The signed repository is configured. Refresh the system's package databases with a full update before browsing its applications."));
+            });
+        return;
+    }
+    const QUrl descriptorUrl(address);
+    if (!SourceRegistration::validName(sourceName) || !descriptorUrl.isValid()
+        || descriptorUrl.scheme() != QStringLiteral("https") || descriptorUrl.host().isEmpty()
+        || !descriptorUrl.userInfo().isEmpty()
+        || !descriptorUrl.path().endsWith(QStringLiteral(".flatpakrepo"))) {
+        QMessageBox::warning(this, QStringLiteral("Invalid Flatpak source"),
+            QStringLiteral("Enter a unique lowercase source name and direct HTTPS .flatpakrepo URL without credentials."));
+        return;
+    }
+    QNetworkAccessManager network;
+    QNetworkRequest request{QUrl(address)};
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+    auto *reply = network.get(request);
+    QEventLoop loop;
+    QTimer timer; timer.setSingleShot(true);
+    connect(&timer, &QTimer::timeout, reply, &QNetworkReply::abort);
+    connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    timer.start(12000); loop.exec();
+    const QByteArray description = reply->readAll();
+    const QUrl finalUrl = reply->url();
+    const auto networkError = reply->error();
+    reply->deleteLater();
+    QString error;
+    if (networkError != QNetworkReply::NoError || finalUrl.scheme() != QStringLiteral("https")
+        || !SourceRegistration::validFlatpakRepo(sourceName, address, description, &error)) {
+        QMessageBox::warning(this, QStringLiteral("Invalid Flatpak source"), error.isEmpty()
+            ? QStringLiteral("The HTTPS repository description could not be downloaded.") : error);
+        return;
+    }
+    const auto keyMatch = QRegularExpression(QStringLiteral("(?m)^GPGKey=([A-Za-z0-9+/=]+)\\s*$"))
+        .match(QString::fromUtf8(description));
+    const auto repositoryMatch = QRegularExpression(QStringLiteral("(?m)^Url=(https://[^\\s]+)\\s*$"))
+        .match(QString::fromUtf8(description));
+    QTemporaryFile keyFile;
+    if (!keyFile.open()) return;
+    keyFile.write(QByteArray::fromBase64(keyMatch.captured(1).toLatin1())); keyFile.flush();
+    QProcess keyInfo;
+    keyInfo.start(QStringLiteral("gpg"), {QStringLiteral("--batch"), QStringLiteral("--with-colons"),
+        QStringLiteral("--show-keys"), QStringLiteral("--fingerprint"), keyFile.fileName()});
+    if (!keyInfo.waitForFinished(5000) || keyInfo.exitCode() != 0) {
+        QMessageBox::warning(this, QStringLiteral("Invalid Flatpak source"), QStringLiteral("The supplied GPG key could not be inspected."));
+        return;
+    }
+    QStringList fingerprints;
+    for (const auto &line : QString::fromUtf8(keyInfo.readAllStandardOutput()).split(QLatin1Char('\n')))
+        if (line.startsWith(QStringLiteral("fpr:"))) fingerprints.append(line.split(QLatin1Char(':')).value(9));
+    if (fingerprints.isEmpty() || QMessageBox::warning(this, QStringLiteral("Review Flatpak remote"),
+        QStringLiteral("Add external Flatpak remote %1 for your user?\n\nDescriptor: %2\nRepository: %3\nGPG key fingerprint(s):\n%4\n\nCheck these details with the publisher before continuing.")
+            .arg(sourceName, finalUrl.toString(), repositoryMatch.captured(1), fingerprints.join(QLatin1Char('\n'))),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
+    QTemporaryFile descriptorFile(QDir::tempPath() + QStringLiteral("/aero7-source-XXXXXX.flatpakrepo"));
+    descriptorFile.setAutoRemove(false);
+    if (!descriptorFile.open() || descriptorFile.write(description) != description.size()) {
+        QMessageBox::warning(this, QStringLiteral("Source change failed"), QStringLiteral("The validated repository description could not be staged."));
+        return;
+    }
+    descriptorFile.flush(); descriptorFile.close();
+    const QString stagedPath = descriptorFile.fileName();
+    runSourceCommand(QStringLiteral("flatpak"), {QStringLiteral("remote-add"), QStringLiteral("--user"),
+        sourceName, stagedPath}, [this, sourceName] {
+            QSettings(QStringLiteral("Aero7"), QStringLiteral("ProgramsCenter"))
+                .setValue(QStringLiteral("customFlatpak/%1").arg(sourceName), true);
+            loadData(); refreshCustomSources();
+        }, stagedPath);
 }
 
 bool MainWindow::trustedInstallAllowed() const
@@ -422,7 +713,7 @@ void MainWindow::loadData()
     }
     all.append(m_metadata.flatpakPackages());
     QList<Package> enabled;
-    for (const auto &package : all) if (sourceEnabled(package.source) || package.state != PackageState::Available) enabled.append(package);
+    for (const auto &package : all) if (sourceEnabled(package) || package.state != PackageState::Available) enabled.append(package);
     m_packages = m_catalog.groupProducts(enabled);
     const QString problem = !m_backend.lastError().isEmpty() ? m_backend.lastError() : !m_catalog.lastError().isEmpty() ? m_catalog.lastError() : m_backend.repositoryWarning();
     const auto appCount = std::count_if(m_packages.cbegin(), m_packages.cend(), [](const Package &package) { return package.application; });
@@ -449,7 +740,9 @@ const Package *MainWindow::findPackage(const QString &id) const
 void MainWindow::showHome()
 {
     m_pages->setCurrentWidget(m_home);
-    m_sidebar->setCurrentRow(0);
+    m_sidebar->clearSelection();
+    m_recommendedSection->setVisible(QSettings(QStringLiteral("Aero7"), QStringLiteral("ProgramsCenter"))
+        .value(QStringLiteral("browsing/showRecommended"), true).toBool());
     setLocation(QStringLiteral("Home"));
     auto fill = [this](const char *name, const QStringList &wanted, int maximum) {
         auto *host = m_home->findChild<QWidget *>(QLatin1String(name));
@@ -479,6 +772,7 @@ void MainWindow::showHome()
 void MainWindow::showResults(const QString &query, const QString &category)
 {
     m_pages->setCurrentWidget(m_results);
+    m_filterRow->show();
     m_table->setRootIsDecorated(false);
     m_table->clear();
     const QString title = !category.isEmpty() ? category : query.isEmpty() ? QStringLiteral("Discover Software") : QStringLiteral("Search results for “%1”").arg(query);
@@ -491,9 +785,9 @@ void MainWindow::showResults(const QString &query, const QString &category)
         if (!needle.isEmpty() && !package.searchableText().contains(needle)) continue;
         if (!package.application && (needle.isEmpty() || !package.searchableText().contains(needle))) continue;
         if (sourceId != QStringLiteral("all") && SourcePolicy::descriptor(package.source).id != sourceId) continue;
-        auto *item = new QTreeWidgetItem({package.displayName, package.version, humanSize(package.installedSize), SourcePolicy::descriptor(package.source).name, statusText(package)});
+        auto *item = new QTreeWidgetItem({package.displayName, package.version, humanSize(package.installedSize), sourceLabel(package), statusText(package)});
         item->setIcon(0, packageArtwork(package));
-        item->setIcon(3, Aero7Icons::icon(SourcePolicy::descriptor(package.source).iconKey));
+        item->setIcon(3, Aero7Icons::sourceIcon(package.source));
         item->setData(0, Qt::UserRole, package.productId);
         m_table->addTopLevelItem(item);
     }
@@ -503,12 +797,13 @@ void MainWindow::showResults(const QString &query, const QString &category)
 void MainWindow::showInstalled()
 {
     m_pages->setCurrentWidget(m_results);
+    m_filterRow->hide();
     m_table->setRootIsDecorated(false);
     m_table->clear();
     m_results->findChild<QLabel *>(QStringLiteral("listTitle"))->setText(QStringLiteral("Installed Programs"));
     setLocation(QStringLiteral("Installed Programs"));
     for (const auto &package : m_packages) if (package.state != PackageState::Available && package.application) {
-        auto *item = new QTreeWidgetItem({package.displayName, package.installedVersion, humanSize(package.installedSize), SourcePolicy::descriptor(package.source).name, statusText(package)});
+        auto *item = new QTreeWidgetItem({package.displayName, package.installedVersion, humanSize(package.installedSize), sourceLabel(package), statusText(package)});
         item->setIcon(0, packageArtwork(package));
         item->setData(0, Qt::UserRole, package.productId);
         m_table->addTopLevelItem(item);
@@ -519,6 +814,7 @@ void MainWindow::showInstalled()
 void MainWindow::showUpdates()
 {
     m_pages->setCurrentWidget(m_results);
+    m_filterRow->hide();
     m_table->clear();
     m_table->setRootIsDecorated(true);
     m_results->findChild<QLabel *>(QStringLiteral("listTitle"))->setText(QStringLiteral("Available Updates"));
@@ -529,7 +825,7 @@ void MainWindow::showUpdates()
     auto *thirdParty = new QTreeWidgetItem(m_table, {QStringLiteral("Third-party updates")});
     for (const auto &package : updates) {
         auto *group = SourcePolicy::isThirdParty(package.source) ? thirdParty : package.application ? applications : system;
-        auto *item = new QTreeWidgetItem(group, {package.displayName, package.installedVersion + QStringLiteral(" → ") + package.version, humanSize(package.downloadSize), SourcePolicy::descriptor(package.source).name, QStringLiteral("Update available")});
+        auto *item = new QTreeWidgetItem(group, {package.displayName, package.installedVersion + QStringLiteral(" → ") + package.version, humanSize(package.downloadSize), sourceLabel(package), QStringLiteral("Update available")});
         item->setIcon(0, packageArtwork(package));
         item->setData(0, Qt::UserRole, package.name);
     }
@@ -541,10 +837,23 @@ void MainWindow::showUpdates()
 
 void MainWindow::showSettings()
 {
-    m_pages->setCurrentWidget(m_settings);
-    setLocation(QStringLiteral("Software Sources"));
-    for (int row = 0; row < m_sidebar->count(); ++row) if (m_sidebar->item(row)->text() == QStringLiteral("Software Sources")) m_sidebar->setCurrentRow(row);
-    m_status->setText(QStringLiteral("Aero7 and Arch Linux are trusted system sources"));
+    if (!m_settingsWindow) {
+        m_settingsWindow = new QDialog(this, Qt::Window | Qt::WindowTitleHint | Qt::WindowCloseButtonHint);
+        m_settingsWindow->setObjectName(QStringLiteral("settingsWindow"));
+        m_settingsWindow->setWindowTitle(QStringLiteral("Programs Center Settings"));
+        m_settingsWindow->setWindowIcon(windowIcon());
+        m_settingsWindow->setWindowModality(Qt::NonModal);
+        m_settingsWindow->resize(900, 720);
+        m_settingsWindow->setMinimumSize(720, 560);
+        m_settingsWindow->setStyleSheet(Win7Style::applicationStyleSheet());
+        auto *layout = new QVBoxLayout(m_settingsWindow);
+        layout->setContentsMargins(0, 0, 0, 0);
+        m_settings = makeSettingsPage();
+        layout->addWidget(m_settings);
+    }
+    m_settingsWindow->show();
+    m_settingsWindow->raise();
+    m_settingsWindow->activateWindow();
 }
 
 void MainWindow::showDetails(const QString &id)
@@ -568,7 +877,7 @@ void MainWindow::showDetails(const QString &id)
     header->addWidget(icon, 0, Qt::AlignTop);
     auto *headings = new QVBoxLayout;
     headings->addWidget(Win7Style::pageTitle(package.displayName));
-    auto *sourceBadge = new SourceBadge(package.source);
+    auto *sourceBadge = new SourceBadge(package.source, package.repository);
     headings->addWidget(sourceBadge);
     header->addLayout(headings, 1);
     layout->addLayout(header);
@@ -597,10 +906,12 @@ void MainWindow::showDetails(const QString &id)
         for (int index = 0; index < package.variants.size(); ++index) {
             const auto &variant = package.variants.at(index);
             const auto source = SourcePolicy::descriptor(variant.source);
-            alternatives->addItem(Aero7Icons::icon(source.iconKey), QStringLiteral("%1 — %2%3").arg(source.name, variant.version, variant.priority == recommendedPriority ? QStringLiteral(" (recommended)") : QString()), index);
+            const QString name = variant.source == SoftwareSource::Unknown
+                ? QStringLiteral("External: %1").arg(variant.repository) : source.name;
+            alternatives->addItem(Aero7Icons::sourceIcon(variant.source), QStringLiteral("%1 — %2%3").arg(name, variant.version, variant.priority == recommendedPriority ? QStringLiteral(" (recommended)") : QString()), index);
         }
         form->addRow(QStringLiteral("Install from:"), alternatives);
-    } else form->addRow(QStringLiteral("Source:"), new QLabel(SourcePolicy::descriptor(package.source).name));
+    } else form->addRow(QStringLiteral("Source:"), new QLabel(sourceLabel(package)));
     layout->addLayout(form);
     auto *blocked = new QLabel(package.blockedReason);
     blocked->setWordWrap(true);
@@ -631,7 +942,7 @@ void MainWindow::showDetails(const QString &id)
                     package.state = variant.state;
                     package.critical = variant.critical;
                     package.blockedReason = variant.blockedReason;
-                    sourceBadge->setSource(package.source);
+                    sourceBadge->setSource(package.source, package.repository);
                     warning->setText(SourcePolicy::warning(package.source));
                     warning->setVisible(SourcePolicy::isThirdParty(package.source));
                     blocked->setText(package.blockedReason);
@@ -662,7 +973,10 @@ void MainWindow::runAction(const Package &package, bool remove)
     if (!package.blockedReason.isEmpty()) { QMessageBox::warning(this, QStringLiteral("Programs Center"), package.blockedReason); return; }
     if (SourcePolicy::isThirdParty(package.source)) {
         QSettings settings(QStringLiteral("Aero7"), QStringLiteral("ProgramsCenter"));
-        const QString key = QStringLiteral("notices/%1").arg(SourcePolicy::descriptor(package.source).id);
+        const QString sourceId = package.source == SoftwareSource::Unknown
+            ? QStringLiteral("external-%1").arg(package.repository)
+            : SourcePolicy::descriptor(package.source).id;
+        const QString key = QStringLiteral("notices/%1").arg(sourceId);
         if (!settings.value(key).toBool()) {
             QMessageBox notice(QMessageBox::Information, QStringLiteral("Third-party software"), SourcePolicy::warning(package.source), QMessageBox::NoButton, this);
             auto *continueButton = notice.addButton(QStringLiteral("Continue"), QMessageBox::AcceptRole);
@@ -675,7 +989,7 @@ void MainWindow::runAction(const Package &package, bool remove)
         }
     }
     const QString verb = remove ? QStringLiteral("Remove") : QStringLiteral("Install");
-    if (QMessageBox::question(this, verb + QLatin1Char(' ') + package.displayName + QLatin1Char('?'), QStringLiteral("%1 %2?\n\nSource: %3\nPackage: %4\nDownload size: %5\nDisk space: %6").arg(verb, package.displayName, SourcePolicy::descriptor(package.source).name, package.name, humanSize(package.downloadSize), humanSize(package.installedSize))) != QMessageBox::Yes) return;
+    if (QMessageBox::question(this, verb + QLatin1Char(' ') + package.displayName + QLatin1Char('?'), QStringLiteral("%1 %2?\n\nSource: %3\nPackage: %4\nDownload size: %5\nDisk space: %6").arg(verb, package.displayName, sourceLabel(package), package.name, humanSize(package.downloadSize), humanSize(package.installedSize))) != QMessageBox::Yes) return;
     auto *transaction = new PackageTransaction(this);
     auto *progress = new QProgressDialog(QStringLiteral("Preparing…"), QString(), 0, 0, this);
     progress->setWindowTitle(verb + QStringLiteral(" Software"));
@@ -693,7 +1007,7 @@ void MainWindow::runAction(const Package &package, bool remove)
         && trustedInstallAllowed();
     const QString nativeTarget = !remove && !package.repository.isEmpty() && package.repository != QStringLiteral("local")
         ? package.repository + QLatin1Char('/') + package.name : package.name;
-    const bool started = package.provider == PackageProvider::Flatpak ? transaction->startFlatpak(operation, package.name)
+    const bool started = package.provider == PackageProvider::Flatpak ? transaction->startFlatpak(operation, package.name, package.repository)
         : passwordless ? transaction->startTrustedInstall(package.repository, package.name)
         : transaction->start(operation, {nativeTarget});
     if (!started) { progress->close(); transaction->deleteLater(); QMessageBox::warning(this, QStringLiteral("Programs Center"), QStringLiteral("The software change could not be started.")); }

@@ -149,14 +149,16 @@ void Metadata::load(const QStringList &roots,bool includeAppStream){
   const QString origin=component.origin().toLower();
   const auto installedEntry=installed.constFind(applicationId);
   const bool isInstalled=installedEntry!=installed.cend();
-  if(!origin.contains(QStringLiteral("flathub"))
-     &&(!isInstalled||!installedEntry->second.contains(QStringLiteral("flathub"),Qt::CaseInsensitive)))continue;
+  const QString remote = isInstalled && !installedEntry->second.isEmpty()
+      ? installedEntry->second.toLower() : origin;
+  if(remote.isEmpty()) continue;
   Package package;
   package.name=applicationId;package.productId=component.id();
   package.displayName=entry.name;package.summary=entry.summary;package.description=entry.description;
   package.iconName=entry.icon;package.category=entry.category;package.homepage=entry.homepage;
   package.license=entry.license;package.developer=entry.developer;package.keywords=entry.keywords;
-  package.repository=QStringLiteral("flathub");package.source=SoftwareSource::Flathub;
+  package.repository=remote;
+  package.source=remote==QStringLiteral("flathub") ? SoftwareSource::Flathub : SoftwareSource::Unknown;
   package.sourcePriority=SourcePolicy::descriptor(package.source).priority;
   package.provider=PackageProvider::Flatpak;package.application=true;
   package.state=isInstalled?PackageState::Installed:PackageState::Available;

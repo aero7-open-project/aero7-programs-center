@@ -1,0 +1,204 @@
+#!/usr/bin/python3
+"""Polkit-gated management of signed, HTTPS, external pacman repositories.
+
+No signing keys are imported here. The administrator must have already put a
+fully trusted key in pacman's keyring. Pacman accepts signatures by any key
+trusted by that keyring; this helper never weakens or overrides that policy.
+"""
+
+import os
+import fcntl
+from pathlib import Path
+import re
+import stat
+import subprocess
+import sys
+import tempfile
+from urllib.parse import urlsplit
+from uuid import uuid4
+
+PACMAN = Path('/etc/pacman.conf')
+MANAGED = Path('/etc/pacman.d/aero7-programs-center-repositories.conf')
+BACKUPS = Path('/var/lib/aero7-programs-center/source-backups')
+INCLUDE = 'Include = /etc/pacman.d/aero7-programs-center-repositories.conf'
+NAME = re.compile(r'[a-z0-9][a-z0-9._-]{0,63}\Z')
+FINGERPRINT = re.compile(r'[0-9A-Fa-f]{40}\Z')
+RESERVED = {'aero7', 'arch', 'core', 'extra', 'multilib', 'flathub',
+            'chaotic-aur', 'cachyos', 'local', 'unknown', 'approved-native'}
+
+
+def validate(name: str, url: str, fingerprint: str) -> None:
+    if not NAME.fullmatch(name) or name in RESERVED or name.startswith(('chaotic-aur', 'cachyos')):
+        raise ValueError('Use a unique lowercase external repository name.')
+    if not FINGERPRINT.fullmatch(fingerprint):
+        raise ValueError('Enter the full 40-character signing-key fingerprint.')
+    if len(url) > 2048 or not url.isascii() or any(char in url for char in '\r\n\t #;\\[]'):
+        raise ValueError('Use a plain HTTPS repository Server URL.')
+    parsed = urlsplit(url)
+    if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password \
+            or parsed.query or parsed.fragment or parsed.port not in (None, 443):
+        raise ValueError('The Server URL must use HTTPS without credentials, query or fragment.')
+    if not re.fullmatch(r'[A-Za-z0-9.-]+', parsed.hostname) \
+            or not re.fullmatch(r'[A-Za-z0-9._~/%+$:-]+', parsed.path):
+        raise ValueError('The Server URL contains unsupported path characters.')
+    variables = re.findall(r'\$[A-Za-z][A-Za-z0-9_]*', url)
+    if any(variable not in ('$arch', '$repo') for variable in variables):
+        raise ValueError('Only $arch and $repo placeholders are supported.')
+
+
+def managed_entries(text: str) -> dict[str, tuple[str, str]]:
+    entries = {}
+    if not text.strip():
+        return entries
+    sections = re.split(r'(?m)^\[([^\]\n]+)\]\s*\n', text)
+    if sections[0].strip() or len(sections) % 2 != 1:
+        raise ValueError('The managed repository file has unexpected content.')
+    for index in range(1, len(sections), 2):
+        name, body = sections[index], sections[index + 1]
+        lines = [line.strip() for line in body.splitlines() if line.strip()]
+        if len(lines) != 3 or lines[0] != 'SigLevel = PackageRequired DatabaseRequired TrustedOnly' \
+                or not lines[1].startswith('Server = ') or not lines[2].startswith('# Reviewed key: '):
+            raise ValueError('The managed repository file was changed outside Programs Center.')
+        url, fingerprint = lines[1][9:], lines[2][16:]
+        validate(name, url, fingerprint)
+        if name in entries:
+            raise ValueError('Duplicate managed repository name.')
+        entries[name] = (url, fingerprint.upper())
+    return entries
+
+
+def render_entries(entries: dict[str, tuple[str, str]]) -> str:
+    return ''.join(f'[{name}]\nSigLevel = PackageRequired DatabaseRequired TrustedOnly\nServer = {url}\n'
+                   f'# Reviewed key: {fingerprint}\n\n'
+                   for name, (url, fingerprint) in sorted(entries.items()))
+
+
+def update_text(pacman: str, managed: str, action: str, name: str,
+                url: str = '', fingerprint: str = '') -> tuple[str, str]:
+    entries = managed_entries(managed)
+    existing = set(re.findall(r'(?m)^\[([^\]\n]+)\]\s*$', pacman))
+    if action == 'add':
+        validate(name, url, fingerprint)
+        if name in entries or name in existing:
+            raise ValueError('This repository name is already configured.')
+        entries[name] = (url, fingerprint.upper())
+    elif action == 'remove':
+        if name not in entries:
+            raise ValueError('This repository is not managed by Programs Center.')
+        del entries[name]
+    else:
+        raise ValueError('Unsupported source action.')
+    if not re.search(r'(?m)^' + re.escape(INCLUDE) + r'\s*$', pacman):
+        pacman = pacman.rstrip() + '\n\n# Aero7 Programs Center external repositories\n' + INCLUDE + '\n'
+    return pacman, render_entries(entries)
+
+
+def trusted_key(fingerprint: str) -> bool:
+    result = subprocess.run(['/usr/bin/gpg', '--homedir', '/etc/pacman.d/gnupg',
+                             '--batch', '--with-colons', '--fingerprint', '--list-keys', fingerprint],
+                            capture_output=True, text=True, timeout=10, check=False)
+    if result.returncode:
+        return False
+    validity = None
+    for line in result.stdout.splitlines():
+        fields = line.split(':')
+        if fields[0] == 'pub':
+            validity = fields[1]
+        if fields[0] == 'fpr' and fields[9].upper() == fingerprint.upper() \
+                and validity in ('f', 'u'):
+            return True
+    return False
+
+
+def atomic_write(path: Path, data: str) -> None:
+    fd, temporary = tempfile.mkstemp(prefix='.aero7-sources-', dir=path.parent)
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o644)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def apply_change(pacman_path: Path, managed_path: Path, backup_root: Path,
+                 action: str, name: str, url: str, fingerprint: str,
+                 check_configuration) -> Path:
+    for path in (pacman_path, managed_path):
+        if path.is_symlink():
+            raise ValueError(f'Refusing symlinked configuration: {path}')
+    before_pacman = pacman_path.read_text(encoding='utf-8')
+    managed_existed = managed_path.exists()
+    before_managed = managed_path.read_text(encoding='utf-8') if managed_existed else ''
+    after_pacman, after_managed = update_text(before_pacman, before_managed, action,
+                                              name, url, fingerprint)
+    backup_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    backup = backup_root / uuid4().hex
+    backup.mkdir(mode=0o700)
+    (backup / 'pacman.conf').write_text(before_pacman, encoding='utf-8')
+    (backup / 'managed.conf').write_text(before_managed, encoding='utf-8')
+    try:
+        atomic_write(managed_path, after_managed)
+        atomic_write(pacman_path, after_pacman)
+        if not check_configuration(action, name):
+            raise RuntimeError('pacman rejected the changed configuration.')
+    except Exception:
+        if managed_existed:
+            atomic_write(managed_path, before_managed)
+        else:
+            managed_path.unlink(missing_ok=True)
+        atomic_write(pacman_path, before_pacman)
+        raise
+    return backup
+
+
+def main(argv: list[str]) -> int:
+    if not re.fullmatch(r'[0-9]+', os.environ.get('PKEXEC_UID', '')) or os.geteuid() != 0:
+        raise PermissionError('Polkit authorization is required.')
+    if len(argv) not in (3, 5) or argv[1] not in ('add', 'remove') \
+            or (argv[1] == 'add' and len(argv) != 5) \
+            or (argv[1] == 'remove' and len(argv) != 3):
+        raise ValueError('Unsupported source action.')
+    if Path('/var/lib/pacman/db.lck').exists():
+        raise RuntimeError('Another package transaction is running.')
+    lock_fd = os.open('/run/aero7-programs-center-sources.lock',
+                      os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    lock = os.fdopen(lock_fd, 'w', encoding='utf-8')
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError as error:
+        raise RuntimeError('Another source change is in progress.') from error
+    action, name = argv[1:3]
+    url, fingerprint = (argv[3], argv[4]) if action == 'add' else ('', '')
+    if action == 'add':
+        validate(name, url, fingerprint)
+        current = subprocess.run(['/usr/bin/pacman-conf', '--repo-list'], capture_output=True,
+                                 text=True, timeout=15, check=False)
+        if current.returncode:
+            raise RuntimeError('The current pacman configuration could not be read.')
+        if name in current.stdout.splitlines():
+            raise ValueError('This repository name is already configured.')
+        if not trusted_key(fingerprint):
+            raise ValueError('This full fingerprint is not a fully trusted key in pacman’s keyring. Import and trust it using your administrator key-management process first.')
+    def check_configuration(operation: str, repository: str) -> bool:
+        check = subprocess.run(['/usr/bin/pacman-conf', '--repo-list'], capture_output=True,
+                               text=True, timeout=15, check=False)
+        return check.returncode == 0 and ((operation == 'add') ==
+                                             (repository in check.stdout.splitlines()))
+
+    backup = apply_change(PACMAN, MANAGED, BACKUPS, action, name, url, fingerprint,
+                          check_configuration)
+    print(f'{"Added" if action == "add" else "Removed"} external repository {name}. Configuration backup: {backup}')
+    return 0
+
+
+if __name__ == '__main__':
+    try:
+        sys.exit(main(sys.argv))
+    except (OSError, ValueError, RuntimeError, PermissionError,
+            subprocess.TimeoutExpired) as error:
+        print(error, file=sys.stderr)
+        sys.exit(1)

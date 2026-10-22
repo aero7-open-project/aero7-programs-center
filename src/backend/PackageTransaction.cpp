@@ -33,15 +33,15 @@ bool PackageTransaction::start(Operation op,const QStringList &packages){
  emit progress("Authenticating…",0,{}); m_process.start("pkexec",args); return true;
 }
 
-bool PackageTransaction::startFlatpak(Operation op,const QString &applicationId){
+bool PackageTransaction::startFlatpak(Operation op,const QString &applicationId,const QString &remote){
  if(m_process.state()!=QProcess::NotRunning||QStandardPaths::findExecutable(QStringLiteral("flatpak")).isEmpty())return false;
  static const QRegularExpression valid("^[A-Za-z0-9._-]+$");
- if(!valid.match(applicationId).hasMatch()||(op!=Install&&op!=Remove))return false;
+ if(!valid.match(applicationId).hasMatch()||!valid.match(remote).hasMatch()||(op!=Install&&op!=Remove))return false;
  QStringList args;
- if(op==Install)args={QStringLiteral("install"),QStringLiteral("--user"),QStringLiteral("--noninteractive"),QStringLiteral("-y"),QStringLiteral("flathub"),applicationId};
+ if(op==Install)args={QStringLiteral("install"),QStringLiteral("--user"),QStringLiteral("--noninteractive"),QStringLiteral("-y"),remote,applicationId};
  else args={QStringLiteral("uninstall"),QStringLiteral("--user"),QStringLiteral("--noninteractive"),QStringLiteral("-y"),applicationId};
  emit progress(QStringLiteral("Preparing Flatpak…"),0,{});
- if(op==Install){
+ if(op==Install && remote==QStringLiteral("flathub")){
   QProcess remotes;remotes.start(QStringLiteral("flatpak"),{QStringLiteral("remotes"),QStringLiteral("--user"),QStringLiteral("--columns=name")});
   const bool found=remotes.waitForFinished(5000)&&QString::fromUtf8(remotes.readAllStandardOutput()).split('\n',Qt::SkipEmptyParts).contains(QStringLiteral("flathub"));
   if(!found){

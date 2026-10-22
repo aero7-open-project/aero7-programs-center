@@ -23,4 +23,11 @@
     <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/aero7-programs-center/aero7-programs-center-permissions</annotate>
     <annotate key="org.freedesktop.policykit.exec.allow_gui">false</annotate>
   </action>
+  <action id="org.aero7.programscenter.manage-sources">
+    <description>Add or remove a signed external package repository</description>
+    <message>Administrator authentication is required to change pacman repositories.</message>
+    <defaults><allow_any>no</allow_any><allow_inactive>no</allow_inactive><allow_active>auth_admin</allow_active></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/aero7-programs-center/aero7-programs-center-sources</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">false</annotate>
+  </action>
 </policyconfig>

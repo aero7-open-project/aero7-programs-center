@@ -42,6 +42,22 @@ int main(int argc, char **argv)
         }
     }
 
+    QHash<int, QImage> sourceBaseline;
+    QIcon::setThemeName(QStringLiteral("missing-aero7-test-theme"));
+    for (const auto source : {SoftwareSource::Aero7, SoftwareSource::Arch,
+                              SoftwareSource::ChaoticAur, SoftwareSource::CachyOs,
+                              SoftwareSource::Flathub, SoftwareSource::Unknown}) {
+        const QImage candidate = Aero7Icons::sourceIcon(source).pixmap(48, 48).toImage();
+        if (candidate.isNull()) return 5;
+        sourceBaseline.insert(static_cast<int>(source), candidate);
+    }
+    QIcon::setThemeName(QStringLiteral("breeze"));
+    for (const auto source : {SoftwareSource::Aero7, SoftwareSource::Arch,
+                              SoftwareSource::ChaoticAur, SoftwareSource::CachyOs,
+                              SoftwareSource::Flathub, SoftwareSource::Unknown})
+        if (Aero7Icons::sourceIcon(source).pixmap(48, 48).toImage()
+            != sourceBaseline.value(static_cast<int>(source))) return 6;
+
     if (Aero7Icons::resource(QStringLiteral(":/missing/aero7-icon.svg"),
                              QStringLiteral("package")).isNull())
         return 2;

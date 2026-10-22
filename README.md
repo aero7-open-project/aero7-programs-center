@@ -12,15 +12,16 @@ package system and a guarded multi-source application catalog.
 
 ## What it provides
 
-- Windows 7-style navigation, command bar, task pane, list views and dialogs
+- Windows 7-style navigation, a single command bar below the breadcrumb/search
+  row, list views and dialogs
 - Application discovery from Aero7, official Arch, Chaotic-AUR, the reviewed
   CachyOS Applications catalog and Flathub
 - One product entry when the same application exists in more than one source
 - Clear source labels, recommended-source ordering and advanced alternatives
 - Installed-program management and System, Application and Third-party update
   groups
-- A Software Sources page with fixed trusted sources and optional source
-  switches
+- A separate Settings window with source management, install permissions, browsing options
+  and a reset for dismissed safety notices
 - AppStream names, descriptions, publishers, licenses and real application
   artwork when the catalog supplies it
 - A searchable Arch application catalog; if catalog data is missing, Programs
@@ -40,13 +41,41 @@ considered part of the trusted system base.
 | Aero7 | Trusted | Official Aero7 integration packages and updates; highest recommendation priority |
 | Arch Linux | Trusted | Official `core`, `extra`, `multilib` and their official testing repositories |
 | Aero7 approved native | Reviewed third-party | Native packages explicitly approved in the signed Aero7 catalog |
-| Chaotic-AUR | Third-party | Precompiled community packages; Programs Center never invokes `yay` or `paru` |
-| CachyOS Applications | Third-party | Only application IDs in Aero7's maintained allowlist are exposed; a full CachyOS repository is never enabled |
-| Flathub | Third-party | Flatpak applications; the per-user Flathub remote is added automatically when the first Flatpak is installed |
+| Chaotic-AUR | Third-party, off by default | Precompiled community packages; Programs Center never invokes `yay` or `paru` |
+| CachyOS Applications | Third-party, off by default | Only application IDs in Aero7's maintained allowlist are exposed; a full CachyOS repository is never enabled |
+| Flathub | Third-party, off by default | Flatpak applications; the per-user Flathub remote is added only after the user opts in and requests an install |
+| Custom native/Flatpak | External, off until added | User-added signed sources are always labelled External and use a generic icon |
 
-Aero7 and Arch Linux cannot be disabled in Programs Center. Optional sources
-may be hidden in **Software Sources**. Installed applications remain visible and
-manageable even when their source is disabled.
+Aero7 and Arch Linux cannot be disabled in Programs Center. Their status shows
+whether the repository is actually configured. Optional sources remain off
+until the user accepts an enablement warning. Installed applications remain
+visible and manageable even when their source is hidden. The first install from
+each third-party source shows a separate warning; the setting to dismiss that
+warning can be reset under **Settings > Safety notices**. Details always retain
+the source warning and label.
+
+**Settings > Software sources > Add source** supports two paths:
+
+- **Native pacman repository:** enter a unique name, HTTPS `Server` URL, and
+  the full fingerprint of an already fully trusted key in pacman's keyring.
+  Review the source and authenticate as an administrator. The dedicated helper
+  adds a small managed include file to `/etc/pacman.conf`, requires package
+  **and database** signatures, checks the key, validates the resulting pacman
+  configuration, and saves a root-owned backup with rollback on failure. It
+  never imports, signs, or trusts a new key. Pacman can accept any key already
+  trusted by its system keyring; it cannot pin one signer per repository. A
+  full system refresh is needed before new package listings appear. The app
+  can remove repositories that this helper added without removing installed
+  packages.
+- **Flatpak remote:** enter a unique name and publisher HTTPS `.flatpakrepo`
+  URL. The app checks for a GPG key, displays its fingerprint for review, then
+  adds the remote to the user's Flatpak installation. Its catalog entries are
+  shown with a generic external-source icon and can be hidden or removed from
+  Settings. Flatpak's signature checks remain enabled.
+
+Neither path grants a custom source an Aero7 or Arch logo/checkmark. A source
+name alone never makes it official. Adding a new signing key to the system
+keyring remains an administrator task outside Programs Center.
 
 The signed `sources.json` catalog maps package variants to one product ID,
 defines source priority and carries the CachyOS allowlist. Updating the normal
@@ -65,12 +94,11 @@ against protected foundation packages. An exception can only be made by an
 explicit reviewed entry in the signed Aero7 catalog. Direct AUR builds are not
 supported.
 
-Flatpak operations run in the current user's Flatpak installation. If needed,
-Programs Center first adds only the official Flathub remote and then continues
-the requested install. No root password or pacman repository rewrite is used
-for that setup.
+Flatpak operations run in the current user's Flatpak installation. After a
+Flathub opt-in, Programs Center may add only the official Flathub remote for a
+requested install. Custom Flatpak installs target their reviewed remote.
 
-The **Software Sources** page can enable password-free trusted application
+The **Settings** page can enable password-free trusted application
 installs for the current account. Enabling or disabling it requires an
 administrator password. Its separate polkit action is available only in an
 active local session, and its helper accepts one package from Aero7, `core`,
@@ -103,5 +131,9 @@ separate modern store design.
 - Update installation remains a complete Arch upgrade; partial system upgrades
   are deliberately not offered.
 - Chaotic-AUR and CachyOS entries are shown only when the corresponding package
-  metadata is available to libalpm; Programs Center does not silently add
-  pacman repositories.
+  metadata is available to libalpm. Their built-in switches do not silently
+  configure pacman repositories.
+- Native Add source supports HTTPS repositories with a signing key that is
+  already fully trusted and a signed repository database. Repositories with
+  unsigned databases or new/untrusted keys require separate administrator
+  trust setup; the app does not weaken signature policy to accommodate them.
