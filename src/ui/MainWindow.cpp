@@ -2,6 +2,7 @@
 
 #include "Aero7Icon.h"
 #include "PackageIcon.h"
+#include "metadata/BrowseCategories.h"
 #include "ProgramCard.h"
 #include "SourceBadge.h"
 #include "Win7Style.h"
@@ -10,6 +11,7 @@
 #include "sources/SourceRegistration.h"
 
 #include <QCheckBox>
+#include <QColor>
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QCoreApplication>
@@ -51,13 +53,18 @@
 #include <algorithm>
 
 namespace {
-QPushButton *taskLink(const QString &text, const QString &icon)
+QPushButton *taskLink(const QString &text, const QIcon &icon)
 {
-    auto *button = new QPushButton(Aero7Icons::icon(icon), text);
+    auto *button = new QPushButton(icon, text);
     button->setObjectName(QStringLiteral("taskLink"));
     button->setFlat(true);
     button->setCursor(Qt::PointingHandCursor);
     return button;
+}
+
+QPushButton *taskLink(const QString &text, const QString &icon)
+{
+    return taskLink(text, Aero7Icons::icon(icon));
 }
 
 QLabel *sectionHeading(const QString &text)
@@ -83,6 +90,16 @@ QString statusText(const Package &package)
     if (package.state == PackageState::UpdateAvailable) return QStringLiteral("Update available");
     if (package.state == PackageState::Installed) return QStringLiteral("Installed");
     return QStringLiteral("Available");
+}
+
+void styleProgramRow(QTreeWidgetItem *item, const Package &package)
+{
+    QFont title = item->font(0);
+    title.setPointSize(10);
+    item->setFont(0, title);
+    item->setForeground(0, QColor(QStringLiteral("#1e7b1e")));
+    item->setToolTip(0, package.displayName);
+    item->setToolTip(3, SourcePolicy::descriptor(package.source).name);
 }
 }
 
@@ -129,14 +146,16 @@ void MainWindow::buildUi()
     forward->setEnabled(false);
     m_breadcrumb = new QLabel(QStringLiteral("Programs Center"));
     m_breadcrumb->setObjectName(QStringLiteral("breadcrumb"));
-    m_breadcrumb->setMinimumWidth(360);
+    m_breadcrumb->setMinimumWidth(250);
     m_breadcrumb->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     navigation->addWidget(m_breadcrumb);
     m_search = new QLineEdit;
     m_search->setObjectName(QStringLiteral("searchBox"));
     m_search->setPlaceholderText(QStringLiteral("Search Programs Center"));
     m_search->setClearButtonEnabled(true);
-    m_search->setFixedWidth(285);
+    m_search->setMinimumWidth(175);
+    m_search->setMaximumWidth(285);
+    m_search->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     navigation->addWidget(m_search);
 
     auto *shell = new QWidget;
@@ -159,11 +178,18 @@ void MainWindow::buildUi()
     m_sidebar = new QListWidget;
     m_sidebar->setObjectName(QStringLiteral("sidebar"));
     m_sidebar->setFixedWidth(205);
+    m_sidebar->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    m_sidebar->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_sidebar->setTextElideMode(Qt::ElideRight);
     auto *categoryHeading = new QListWidgetItem(QStringLiteral("CATEGORIES"));
     categoryHeading->setFlags(Qt::NoItemFlags);
     m_sidebar->addItem(categoryHeading);
-    for (const auto *category : {"Internet", "Multimedia", "Graphics & Photos", "Office", "Games", "Utilities", "System Tools", "Education", "Developer Tools"})
-        m_sidebar->addItem(new QListWidgetItem(Aero7Icons::icon(QString::fromLatin1(category)), QString::fromLatin1(category)));
+    for (const auto &category : BrowseCategories::all()) {
+        auto *item = new QListWidgetItem(Aero7Icons::categoryIcon(category.icon), category.label);
+        item->setData(Qt::UserRole, category.id);
+        item->setToolTip(category.label);
+        m_sidebar->addItem(item);
+    }
     bodyLayout->addWidget(m_sidebar);
     m_pages = new QStackedWidget;
     m_home = makeHome();
@@ -190,11 +216,12 @@ void MainWindow::buildUi()
     connect(searchDelay, &QTimer::timeout, this, [this] { showResults(m_search->text()); });
     connect(m_search, &QLineEdit::returnPressed, this, [this, searchDelay] { searchDelay->stop(); showResults(m_search->text()); });
     connect(m_sourceFilter, &QComboBox::currentIndexChanged, this, [this] {
-        if (m_pages->currentWidget() == m_results) showResults(m_search->text());
+        if (m_pages->currentWidget() == m_results)
+            showResults(m_activeQuery, m_activeCategoryId);
     });
     connect(m_sidebar, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) {
-        const QString text = item->text();
-        if (item->flags() != Qt::NoItemFlags) showResults({}, text);
+        if (item->flags() != Qt::NoItemFlags)
+            showResults({}, item->data(Qt::UserRole).toString());
     });
     new QShortcut(QKeySequence::Find, this, [this] { m_search->setFocus(); m_search->selectAll(); });
     new QShortcut(QKeySequence::Refresh, this, [this] { loadData(); showHome(); });
@@ -231,9 +258,10 @@ QWidget *MainWindow::makeHome()
     layout->addWidget(featured);
     layout->addWidget(sectionHeading(QStringLiteral("Browse by category")));
     auto *categories = new WrappingGridLayout;
-    for (const auto *category : {"Internet", "Multimedia", "Games", "Utilities"}) {
-        auto *button = taskLink(QString::fromLatin1(category), QString::fromLatin1(category));
-        connect(button, &QPushButton::clicked, this, [this, category] { showResults({}, QString::fromLatin1(category)); });
+    for (const auto &category : BrowseCategories::all()) {
+        if (!category.homeShortcut) continue;
+        auto *button = taskLink(category.label, Aero7Icons::categoryIcon(category.icon));
+        connect(button, &QPushButton::clicked, this, [this, id = category.id] { showResults({}, id); });
         categories->addWidget(button);
     }
     layout->addLayout(categories);
@@ -297,7 +325,7 @@ QWidget *MainWindow::makeSettingsPage()
     content->setObjectName(QStringLiteral("page"));
     auto *layout = new QVBoxLayout(content);
     layout->setContentsMargins(32, 23, 38, 28);
-    layout->setSpacing(11);
+    layout->setSpacing(9);
     layout->addWidget(Win7Style::pageTitle(QStringLiteral("Settings")));
     layout->addWidget(Win7Style::instruction(QStringLiteral("Manage software sources, install permissions and browsing preferences.")));
     layout->addWidget(Win7Style::separator());
@@ -307,6 +335,8 @@ QWidget *MainWindow::makeSettingsPage()
         const auto info = SourcePolicy::descriptor(source);
         auto *group = new QGroupBox(info.name);
         auto *row = new QHBoxLayout(group);
+        row->setContentsMargins(11, 7, 11, 7);
+        row->setSpacing(10);
         auto *icon = new QLabel;
         const bool available = fixed && officialSourceConfigured(source);
         icon->setPixmap(Aero7Icons::sourceIcon(source, available).pixmap(68, 38));
@@ -315,6 +345,7 @@ QWidget *MainWindow::makeSettingsPage()
         icon->setAlignment(Qt::AlignCenter);
         row->addWidget(icon, 0, Qt::AlignTop);
         auto *copy = new QVBoxLayout;
+        copy->setSpacing(3);
         auto *description = Win7Style::instruction(info.description);
         copy->addWidget(description);
         copy->addWidget(Win7Style::instruction(fixed ? QStringLiteral("Managed by the system")
@@ -780,19 +811,35 @@ void MainWindow::showResults(const QString &query, const QString &category)
     m_filterRow->show();
     m_table->setRootIsDecorated(false);
     m_table->clear();
-    const QString title = !category.isEmpty() ? category : query.isEmpty() ? QStringLiteral("Discover Software") : QStringLiteral("Search results for “%1”").arg(query);
+    const auto *browseCategory = BrowseCategories::find(category);
+    m_activeQuery = query;
+    m_activeCategoryId = browseCategory ? browseCategory->id : category;
+    if (browseCategory) {
+        for (int row = 1; row < m_sidebar->count(); ++row)
+            if (m_sidebar->item(row)->data(Qt::UserRole).toString() == browseCategory->id) {
+                m_sidebar->setCurrentRow(row);
+                break;
+            }
+    } else m_sidebar->clearSelection();
+    const QString title = browseCategory ? browseCategory->label
+        : !category.isEmpty() ? category
+        : query.isEmpty() ? QStringLiteral("Discover Software")
+        : QStringLiteral("Search results for “%1”").arg(query);
     m_results->findChild<QLabel *>(QStringLiteral("listTitle"))->setText(title);
     setLocation(title);
     const QString sourceId = m_sourceFilter->currentData().toString();
     const QString needle = query.toCaseFolded();
     for (const auto &package : m_packages) {
-        if (!category.isEmpty() && package.category.compare(category, Qt::CaseInsensitive) != 0) continue;
+        if (!category.isEmpty() && (browseCategory
+            ? package.categoryId != browseCategory->id && package.category != browseCategory->label
+            : package.category.compare(category, Qt::CaseInsensitive) != 0)) continue;
         if (!needle.isEmpty() && !package.searchableText().contains(needle)) continue;
         if (!package.application && (needle.isEmpty() || !package.searchableText().contains(needle))) continue;
         if (sourceId != QStringLiteral("all") && SourcePolicy::descriptor(package.source).id != sourceId) continue;
         auto *item = new QTreeWidgetItem({package.displayName, package.version, humanSize(package.installedSize), sourceLabel(package), statusText(package)});
         item->setIcon(0, packageArtwork(package));
         item->setIcon(3, Aero7Icons::sourceIcon(package.source, officialSourceConfigured(package)));
+        styleProgramRow(item, package);
         item->setData(0, Qt::UserRole, package.productId);
         m_table->addTopLevelItem(item);
     }
@@ -802,6 +849,7 @@ void MainWindow::showResults(const QString &query, const QString &category)
 void MainWindow::showInstalled()
 {
     m_pages->setCurrentWidget(m_results);
+    m_sidebar->clearSelection();
     m_filterRow->hide();
     m_table->setRootIsDecorated(false);
     m_table->clear();
@@ -811,6 +859,7 @@ void MainWindow::showInstalled()
         auto *item = new QTreeWidgetItem({package.displayName, package.installedVersion, humanSize(package.installedSize), sourceLabel(package), statusText(package)});
         item->setIcon(0, packageArtwork(package));
         item->setIcon(3, Aero7Icons::sourceIcon(package.source, officialSourceConfigured(package)));
+        styleProgramRow(item, package);
         item->setData(0, Qt::UserRole, package.productId);
         m_table->addTopLevelItem(item);
     }
@@ -820,6 +869,7 @@ void MainWindow::showInstalled()
 void MainWindow::showUpdates()
 {
     m_pages->setCurrentWidget(m_results);
+    m_sidebar->clearSelection();
     m_filterRow->hide();
     m_table->clear();
     m_table->setRootIsDecorated(true);
@@ -834,6 +884,7 @@ void MainWindow::showUpdates()
         auto *item = new QTreeWidgetItem(group, {package.displayName, package.installedVersion + QStringLiteral(" → ") + package.version, humanSize(package.downloadSize), sourceLabel(package), QStringLiteral("Update available")});
         item->setIcon(0, packageArtwork(package));
         item->setIcon(3, Aero7Icons::sourceIcon(package.source, officialSourceConfigured(package)));
+        styleProgramRow(item, package);
         item->setData(0, Qt::UserRole, package.name);
     }
     for (auto *group : {system, applications, thirdParty}) {
@@ -877,35 +928,62 @@ void MainWindow::showDetails(const QString &id)
     dialog.resize(590, 455);
     dialog.setStyleSheet(Win7Style::applicationStyleSheet());
     auto *layout = new QVBoxLayout(&dialog);
-    layout->setContentsMargins(22, 18, 22, 16);
+    layout->setContentsMargins(0, 0, 0, 12);
+    layout->setSpacing(8);
+    auto *scroll = new QScrollArea;
+    scroll->setObjectName(QStringLiteral("detailsScroll"));
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    auto *content = new QWidget;
+    content->setObjectName(QStringLiteral("detailsContent"));
+    auto *details = new QVBoxLayout(content);
+    details->setContentsMargins(22, 18, 22, 12);
+    details->setSpacing(10);
     auto *header = new QHBoxLayout;
+    header->setSpacing(13);
     auto *icon = new QLabel;
     icon->setPixmap(packageArtwork(package).pixmap(64, 64));
+    icon->setFixedSize(64, 64);
     header->addWidget(icon, 0, Qt::AlignTop);
     auto *headings = new QVBoxLayout;
-    headings->addWidget(Win7Style::pageTitle(package.displayName));
+    headings->setSpacing(4);
+    auto *title = Win7Style::pageTitle(package.displayName);
+    title->setWordWrap(true);
+    headings->addWidget(title);
     auto *sourceBadge = new SourceBadge(package.source, package.repository,
                                        officialSourceConfigured(package));
     headings->addWidget(sourceBadge);
-    header->addLayout(headings, 1);
-    layout->addLayout(header);
-    layout->addWidget(Win7Style::separator());
+    header->addLayout(headings);
+    header->addStretch();
+    details->addLayout(header);
+    details->addWidget(Win7Style::separator());
     auto *description = new QLabel(package.description.isEmpty() ? package.summary : package.description);
     description->setWordWrap(true);
-    layout->addWidget(description);
+    details->addWidget(description);
     auto *warning = new QLabel(SourcePolicy::warning(package.source));
     warning->setWordWrap(true);
     warning->setStyleSheet(QStringLiteral("color:#6f5300;background:#fff9df;border:1px solid #e1cf82;padding:7px;"));
     warning->setVisible(SourcePolicy::isThirdParty(package.source));
-    layout->addWidget(warning);
+    details->addWidget(warning);
+    auto *information = new QLabel(QStringLiteral("Program information"));
+    information->setObjectName(QStringLiteral("detailSectionHeading"));
+    details->addWidget(information);
     auto *form = new QFormLayout;
+    form->setHorizontalSpacing(18);
+    form->setVerticalSpacing(7);
     auto *version = new QLabel(package.version);
+    version->setWordWrap(true);
     auto *installedVersion = new QLabel(package.installedVersion.isEmpty() ? QStringLiteral("Not installed") : package.installedVersion);
+    installedVersion->setWordWrap(true);
     form->addRow(QStringLiteral("Version:"), version);
     form->addRow(QStringLiteral("Installed version:"), installedVersion);
     form->addRow(QStringLiteral("Download size:"), new QLabel(humanSize(package.downloadSize)));
-    form->addRow(QStringLiteral("Publisher:"), new QLabel(package.developer.isEmpty() ? QStringLiteral("Not specified") : package.developer));
-    form->addRow(QStringLiteral("License:"), new QLabel(package.license.isEmpty() ? QStringLiteral("Not specified") : package.license));
+    auto *publisher = new QLabel(package.developer.isEmpty() ? QStringLiteral("Not specified") : package.developer);
+    publisher->setWordWrap(true);
+    form->addRow(QStringLiteral("Publisher:"), publisher);
+    auto *license = new QLabel(package.license.isEmpty() ? QStringLiteral("Not specified") : package.license);
+    license->setWordWrap(true);
+    form->addRow(QStringLiteral("License:"), license);
     QComboBox *alternatives = nullptr;
     if (package.variants.size() > 1) {
         alternatives = new QComboBox;
@@ -922,14 +1000,20 @@ void MainWindow::showDetails(const QString &id)
             alternatives->addItem(Aero7Icons::sourceIcon(variant.source, configured), QStringLiteral("%1 — %2%3").arg(name, variant.version, variant.priority == recommendedPriority ? QStringLiteral(" (recommended)") : QString()), index);
         }
         form->addRow(QStringLiteral("Install from:"), alternatives);
-    } else form->addRow(QStringLiteral("Source:"), new QLabel(sourceLabel(package)));
-    layout->addLayout(form);
+    } else {
+        auto *source = new QLabel(sourceLabel(package));
+        source->setWordWrap(true);
+        form->addRow(QStringLiteral("Source:"), source);
+    }
+    details->addLayout(form);
     auto *blocked = new QLabel(package.blockedReason);
     blocked->setWordWrap(true);
     blocked->setStyleSheet(QStringLiteral("color:#9b1c1c;"));
     blocked->setVisible(!package.blockedReason.isEmpty());
-    layout->addWidget(blocked);
-    layout->addStretch();
+    details->addWidget(blocked);
+    details->addStretch();
+    scroll->setWidget(content);
+    layout->addWidget(scroll, 1);
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close);
     auto *action = buttons->addButton(package.state == PackageState::Installed ? QStringLiteral("Remove") : QStringLiteral("Install"), QDialogButtonBox::ActionRole);
     action->setEnabled(package.blockedReason.isEmpty() && (!package.critical || package.state != PackageState::Installed));
@@ -968,7 +1052,11 @@ void MainWindow::showDetails(const QString &id)
     }
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
     connect(action, &QPushButton::clicked, &dialog, [this, &dialog, &package] { const bool remove = package.state == PackageState::Installed; dialog.accept(); runAction(package, remove); });
-    layout->addWidget(buttons);
+    auto *footer = new QHBoxLayout;
+    footer->setContentsMargins(22, 0, 22, 0);
+    footer->addStretch();
+    footer->addWidget(buttons);
+    layout->addLayout(footer);
     dialog.exec();
 }
 

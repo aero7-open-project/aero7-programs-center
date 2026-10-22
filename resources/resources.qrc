@@ -1,1 +1,22 @@
-<RCC><qresource prefix="/"><file alias="icons/aero7-programs-center.png">icons/aero7-programs-center.png</file><file alias="catalog/sources.json">../catalog/sources.json</file><file alias="catalog/featured.json">../catalog/featured.json</file><file alias="sources/aero7.png">icons/sources/aero7.png</file><file alias="sources/arch.png">icons/sources/arch.png</file><file alias="sources/chaotic-aur.png">icons/sources/chaotic-aur.png</file><file alias="sources/cachyos.png">icons/sources/cachyos.png</file><file alias="sources/flathub.png">icons/sources/flathub.png</file><file alias="scrollbar/up.svg">icons/scrollbar/up.svg</file><file alias="scrollbar/down.svg">icons/scrollbar/down.svg</file><file alias="scrollbar/left.svg">icons/scrollbar/left.svg</file><file alias="scrollbar/right.svg">icons/scrollbar/right.svg</file></qresource></RCC>
+<RCC>
+  <qresource prefix="/">
+    <file alias="icons/aero7-programs-center.png">icons/aero7-programs-center.png</file>
+    <file alias="catalog/sources.json">../catalog/sources.json</file>
+    <file alias="catalog/featured.json">../catalog/featured.json</file>
+    <file alias="sources/aero7.png">icons/sources/aero7.png</file>
+    <file alias="sources/arch.png">icons/sources/arch.png</file>
+    <file alias="sources/chaotic-aur.png">icons/sources/chaotic-aur.png</file>
+    <file alias="sources/cachyos.png">icons/sources/cachyos.png</file>
+    <file alias="sources/flathub.png">icons/sources/flathub.png</file>
+    <file alias="scrollbar/up.svg">icons/scrollbar/up.svg</file>
+    <file alias="scrollbar/down.svg">icons/scrollbar/down.svg</file>
+    <file alias="scrollbar/left.svg">icons/scrollbar/left.svg</file>
+    <file alias="scrollbar/right.svg">icons/scrollbar/right.svg</file>
+    <file alias="categories/communication.svg">icons/categories/communication.svg</file>
+    <file alias="categories/music-audio.svg">icons/categories/music-audio.svg</file>
+    <file alias="categories/video.svg">icons/categories/video.svg</file>
+    <file alias="categories/education.svg">icons/categories/education.svg</file>
+    <file alias="categories/files.svg">icons/categories/files.svg</file>
+    <file alias="categories/security.svg">icons/categories/security.svg</file>
+  </qresource>
+</RCC>

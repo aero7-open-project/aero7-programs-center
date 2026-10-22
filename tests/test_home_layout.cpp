@@ -1,7 +1,9 @@
 #include "ui/MainWindow.h"
 #include "ui/ProgramCard.h"
 #include "ui/WrappingGridLayout.h"
+#include "metadata/BrowseCategories.h"
 #include <QCheckBox>
+#include <QComboBox>
 #include <QLabel>
 #include <QGroupBox>
 #include <QDialog>
@@ -13,6 +15,7 @@
 #include <QStackedWidget>
 #include <QTemporaryDir>
 #include <QToolButton>
+#include <QTreeWidget>
 #include <QWheelEvent>
 #include <QtTest>
 
@@ -46,7 +49,7 @@ private slots:
         fill(host);
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
-        for (int width : {1600, 1200, 900, 1200}) {
+        for (int width : {1600, 1200, 900, 720, 1200}) {
             window.resize(width, 780);
             // Wayland commits compositor-approved sizes asynchronously. Wait
             // for the requested size, not a fixed delay that can test the old
@@ -154,6 +157,48 @@ private slots:
             QVERIFY(bar->value() > 0);
         }
         QVERIFY(home->horizontalScrollBar()->maximum() == 0);
+    }
+    void browseCategoriesUseStableIdsAndScrollAtNarrowWidth() {
+        MainWindow window(parseDeepLink({"app", "--home"}));
+        window.resize(720, 600);
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        QTRY_COMPARE(window.size(), QSize(720, 600));
+        auto *sidebar = window.findChild<QListWidget *>("sidebar");
+        auto *table = window.findChild<QTreeWidget *>();
+        auto *title = window.findChild<QLabel *>("listTitle");
+        QVERIFY(sidebar);
+        QVERIFY(table);
+        QVERIFY(title);
+        QCOMPARE(sidebar->count(), BrowseCategories::all().size() + 1);
+        QVERIFY(sidebar->verticalScrollBar()->maximum() > 0);
+        int populated = 0;
+        int total = 0;
+        for (int index = 0; index < BrowseCategories::all().size(); ++index) {
+            const auto &category = BrowseCategories::all().at(index);
+            auto *item = sidebar->item(index + 1);
+            QCOMPARE(item->data(Qt::UserRole).toString(), category.id);
+            sidebar->scrollToItem(item);
+            QVERIFY(sidebar->viewport()->rect().intersects(sidebar->visualItemRect(item)));
+            Q_EMIT sidebar->itemClicked(item);
+            QCOMPARE(title->text(), category.label);
+            QCOMPARE(sidebar->currentItem(), item);
+            const int count = table->topLevelItemCount();
+            qInfo().noquote() << "Browse category" << category.label << count;
+            total += count;
+            if (count > 0) ++populated;
+        }
+        // A complete catalog should populate nearly all of these practical
+        // groups; sparse/offline test environments still exercise navigation.
+        if (total > 300) QVERIFY(populated >= 12);
+        auto *filter = window.findChild<QComboBox *>();
+        QVERIFY(filter);
+        const int arch = filter->findData(QStringLiteral("arch"));
+        QVERIFY(arch > 0);
+        Q_EMIT sidebar->itemClicked(sidebar->item(2)); // Communication
+        filter->setCurrentIndex(arch);
+        QCOMPARE(title->text(), QStringLiteral("Communication"));
+        QCOMPARE(sidebar->currentItem()->data(Qt::UserRole).toString(), QStringLiteral("communication"));
     }
 };
 QTEST_MAIN(HomeLayoutTest)

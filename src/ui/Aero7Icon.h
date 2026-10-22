@@ -64,6 +64,12 @@ inline QIcon resource(const QString &path, const QString &fallback)
     return icon(fallback);
 }
 
+inline QIcon categoryIcon(const QString &key)
+{
+    return key.startsWith(QStringLiteral(":/"))
+        ? resource(key, QStringLiteral("warning")) : icon(key);
+}
+
 inline QIcon sourceIcon(SoftwareSource source, bool officialConfigured = false)
 {
     QString name;

@@ -21,7 +21,7 @@ struct PackageVariant {
 
 struct Package {
     QString name, displayName, summary, description, version, installedVersion;
-    QString repository, homepage, license, developer, iconName, category;
+    QString repository, homepage, license, developer, iconName, category, categoryId;
     QString productId;
     QStringList desktopIds, keywords;
     QList<PackageVariant> variants;

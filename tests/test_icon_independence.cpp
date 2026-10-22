@@ -1,8 +1,10 @@
 #include "ui/Aero7Icon.h"
+#include "metadata/BrowseCategories.h"
 
 #include <QApplication>
 #include <QIcon>
 #include <QImage>
+#include <QFile>
 #include <QRect>
 
 namespace {
@@ -72,6 +74,24 @@ int main(int argc, char **argv)
                                   SoftwareSource::Flathub, SoftwareSource::Unknown})
             if (Aero7Icons::sourceIcon(source, true).pixmap(size, size).toImage()
                 != Aero7Icons::sourceIcon(source).pixmap(size, size).toImage()) return 9;
+    }
+
+    for (const int size : {16, 20, 22}) {
+        QList<QImage> categoryImages;
+        QIcon::setThemeName(QStringLiteral("missing-aero7-test-theme"));
+        for (const auto &category : BrowseCategories::all()) {
+            const QString path = category.icon.startsWith(QStringLiteral(":/"))
+                ? category.icon
+                : QStringLiteral(":/aero7/pack/16/%1.png").arg(Aero7Icons::canonicalName(category.icon));
+            if (!QFile::exists(path)) return 10;
+            const QImage rendered = Aero7Icons::categoryIcon(category.icon).pixmap(size, size).toImage();
+            if (rendered.isNull() || categoryImages.contains(rendered)) return 11;
+            categoryImages.append(rendered);
+            QIcon::setThemeName(QStringLiteral("breeze"));
+            if (Aero7Icons::categoryIcon(category.icon).pixmap(size, size).toImage() != rendered)
+                return 12;
+            QIcon::setThemeName(QStringLiteral("missing-aero7-test-theme"));
+        }
     }
 
     if (Aero7Icons::resource(QStringLiteral(":/missing/aero7-icon.svg"),

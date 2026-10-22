@@ -15,7 +15,7 @@ public:
     static QStringList loadFeatured(const QString &path, QString *error=nullptr);
 private:
     struct Entry {
-        QString name, summary, description, icon, category, productId;
+        QString name, summary, description, icon, category, categoryId, productId;
         QString homepage, license, developer;
         QStringList keywords;
     };

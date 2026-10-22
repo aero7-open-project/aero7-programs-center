@@ -35,6 +35,8 @@ private:
     Metadata m_metadata;
     SourceCatalog m_catalog;
     QList<Package> m_packages;
+    QString m_activeQuery;
+    QString m_activeCategoryId;
     QListWidget *m_sidebar = nullptr;
     QStackedWidget *m_pages = nullptr;
     QLineEdit *m_search = nullptr;

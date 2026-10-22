@@ -1,4 +1,5 @@
 #include "Metadata.h"
+#include "BrowseCategories.h"
 #include <AppStreamQt/bundle.h>
 #include <AppStreamQt/component.h>
 #include <AppStreamQt/developer.h>
@@ -65,14 +66,7 @@ QHash<QString,QPair<QString,QString>> installedFlatpaks()
 }
 
 QString Metadata::mapCategory(const QStringList &c){
- const QString x=c.join(' ').toLower();
- if(x.contains("network")||x.contains("webbrowser"))return "Internet";
- if(x.contains("audio")||x.contains("video"))return "Multimedia";
- if(x.contains("graphics")||x.contains("photography"))return "Graphics & Photos";
- if(x.contains("office"))return "Office"; if(x.contains("game"))return "Games";
- if(x.contains("education")||x.contains("science"))return "Education";
- if(x.contains("development"))return "Developer Tools"; if(x.contains("settings")||x.contains("system"))return "System Tools";
- return "Utilities";
+ return BrowseCategories::label(BrowseCategories::classify(c));
 }
 void Metadata::load(const QStringList &roots,bool includeAppStream){
  m_entries.clear();
@@ -92,7 +86,9 @@ void Metadata::load(const QStringList &roots,bool includeAppStream){
    Entry e;
    e.name=f.value("Name").toString();e.summary=f.value("Comment").toString();
    e.description=e.summary;e.icon=f.value("Icon").toString();
-   e.category=mapCategory(f.value("Categories").toString().split(';',Qt::SkipEmptyParts));
+   const QStringList tags=f.value("Categories").toString().split(';',Qt::SkipEmptyParts);
+   e.categoryId=BrowseCategories::classify(tags);
+   e.category=BrowseCategories::label(e.categoryId);
    e.productId=desktopId;e.keywords=f.value("Keywords").toString().split(';',Qt::SkipEmptyParts);
    for(const auto&p:pkgs)m_entries.insert(p,e);
   }
@@ -129,7 +125,8 @@ void Metadata::load(const QStringList &roots,bool includeAppStream){
   Entry entry;
   entry.name=component.name();entry.summary=component.summary();
   entry.description=component.description();entry.icon=appStreamIcon(component);
-  entry.category=mapCategory(component.categories());entry.productId=component.id();
+  entry.categoryId=BrowseCategories::classify(component.categories());
+  entry.category=BrowseCategories::label(entry.categoryId);entry.productId=component.id();
   entry.homepage=component.url(AppStream::Component::UrlKindHomepage).toString();
   entry.license=component.projectLicense();entry.developer=component.developer().name();
   entry.keywords=component.keywords();
@@ -155,7 +152,7 @@ void Metadata::load(const QStringList &roots,bool includeAppStream){
   Package package;
   package.name=applicationId;package.productId=component.id();
   package.displayName=entry.name;package.summary=entry.summary;package.description=entry.description;
-  package.iconName=entry.icon;package.category=entry.category;package.homepage=entry.homepage;
+  package.iconName=entry.icon;package.category=entry.category;package.categoryId=entry.categoryId;package.homepage=entry.homepage;
   package.license=entry.license;package.developer=entry.developer;package.keywords=entry.keywords;
   package.repository=remote;
   package.source=remote==QStringLiteral("flathub") ? SoftwareSource::Flathub : SoftwareSource::Unknown;
@@ -174,7 +171,7 @@ void Metadata::enrich(Package &p)const{
  }
  if(i==m_entries.cend())return;
  p.displayName=i->name;p.summary=i->summary;p.description=i->description;
- p.iconName=i->icon;p.category=i->category;p.productId=i->productId;
+ p.iconName=i->icon;p.category=i->category;p.categoryId=i->categoryId;p.productId=i->productId;
  p.homepage=i->homepage;p.license=i->license;p.developer=i->developer;
  p.keywords=i->keywords;p.application=true;
 }
