@@ -58,6 +58,22 @@ int main(int argc, char **argv)
         if (Aero7Icons::sourceIcon(source).pixmap(48, 48).toImage()
             != sourceBaseline.value(static_cast<int>(source))) return 6;
 
+    for (const int size : {16, 22, 38, 48}) {
+        for (const auto source : {SoftwareSource::Aero7, SoftwareSource::Arch}) {
+            const QImage plain = Aero7Icons::sourceIcon(source).pixmap(size, size).toImage();
+            const QImage marked = Aero7Icons::sourceIcon(source, true).pixmap(size, size).toImage();
+            if (plain.isNull() || marked.isNull() || plain == marked) return 7;
+            QIcon::setThemeName(QStringLiteral("missing-aero7-test-theme"));
+            if (Aero7Icons::sourceIcon(source, true).pixmap(size, size).toImage() != marked)
+                return 8;
+            QIcon::setThemeName(QStringLiteral("breeze"));
+        }
+        for (const auto source : {SoftwareSource::ChaoticAur, SoftwareSource::CachyOs,
+                                  SoftwareSource::Flathub, SoftwareSource::Unknown})
+            if (Aero7Icons::sourceIcon(source, true).pixmap(size, size).toImage()
+                != Aero7Icons::sourceIcon(source).pixmap(size, size).toImage()) return 9;
+    }
+
     if (Aero7Icons::resource(QStringLiteral(":/missing/aero7-icon.svg"),
                              QStringLiteral("package")).isNull())
         return 2;

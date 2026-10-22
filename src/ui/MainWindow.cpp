@@ -150,8 +150,7 @@ void MainWindow::buildUi()
     auto *updates = commandButton(QStringLiteral("Check for updates"), QStringLiteral("update"));
     auto *installed = commandButton(QStringLiteral("Installed programs"), QStringLiteral("package"));
     auto *settings = commandButton(QStringLiteral("Settings"), QStringLiteral("settings"));
-    auto *control = commandButton(QStringLiteral("Control Panel"), QStringLiteral("settings"));
-    for (auto *button : {home, discover, updates, installed, settings, control}) commands->addWidget(button);
+    for (auto *button : {home, discover, updates, installed, settings}) commands->addWidget(button);
     commands->addStretch();
     auto *body = new QWidget;
     auto *bodyLayout = new QHBoxLayout(body);
@@ -183,7 +182,6 @@ void MainWindow::buildUi()
     connect(updates, &QToolButton::clicked, this, &MainWindow::showUpdates);
     connect(installed, &QToolButton::clicked, this, &MainWindow::showInstalled);
     connect(settings, &QToolButton::clicked, this, &MainWindow::showSettings);
-    connect(control, &QToolButton::clicked, this, [] { QProcess::startDetached(QStringLiteral("aero7-control-panel"), {}); });
     connect(back, &QAction::triggered, this, &MainWindow::showHome);
     auto *searchDelay = new QTimer(this);
     searchDelay->setSingleShot(true);
@@ -279,6 +277,7 @@ QWidget *MainWindow::makeListPage()
     filterRow->addWidget(m_sourceFilter);
     layout->addWidget(m_filterRow);
     m_table = new QTreeWidget;
+    m_table->setIconSize(QSize(22, 22));
     m_table->setColumnCount(5);
     m_table->setHeaderLabels({QStringLiteral("Name"), QStringLiteral("Version"), QStringLiteral("Size"), QStringLiteral("Source"), QStringLiteral("Status")});
     Win7Style::configureTree(m_table);
@@ -309,7 +308,9 @@ QWidget *MainWindow::makeSettingsPage()
         auto *group = new QGroupBox(info.name);
         auto *row = new QHBoxLayout(group);
         auto *icon = new QLabel;
-        icon->setPixmap(Aero7Icons::sourceIcon(source).pixmap(68, 38));
+        const bool available = fixed && officialSourceConfigured(source);
+        icon->setPixmap(Aero7Icons::sourceIcon(source, available).pixmap(68, 38));
+        if (available) icon->setToolTip(QStringLiteral("Official source configured on this system"));
         icon->setFixedSize(70, 42);
         icon->setAlignment(Qt::AlignCenter);
         row->addWidget(icon, 0, Qt::AlignTop);
@@ -320,10 +321,6 @@ QWidget *MainWindow::makeSettingsPage()
             : QStringLiteral("External source · Apps and updates may be maintained by another project.")));
         row->addLayout(copy, 1);
         if (fixed) {
-            const bool available = source == SoftwareSource::Aero7
-                ? m_backend.repositories().contains(QStringLiteral("aero7"))
-                : m_backend.repositories().contains(QStringLiteral("core"))
-                  || m_backend.repositories().contains(QStringLiteral("extra"));
             auto *status = new QWidget;
             auto *statusLayout = new QHBoxLayout(status);
             statusLayout->setContentsMargins(0, 0, 0, 0);
@@ -332,13 +329,6 @@ QWidget *MainWindow::makeSettingsPage()
                                                  : QStringLiteral("Official source\nNot configured"));
             label->setObjectName(QStringLiteral("officialSourceStatus"));
             statusLayout->addWidget(label);
-            if (available) {
-                auto *check = new QLabel;
-                check->setObjectName(QStringLiteral("officialSourceCheck"));
-                check->setPixmap(Aero7Icons::icon(QStringLiteral("success")).pixmap(22, 22));
-                check->setToolTip(QStringLiteral("Official source configured on this system"));
-                statusLayout->addWidget(check);
-            }
             row->addWidget(status, 0, Qt::AlignRight | Qt::AlignVCenter);
         } else {
             auto *toggle = new QCheckBox(QStringLiteral("Show apps"));
@@ -424,6 +414,21 @@ bool MainWindow::sourceEnabled(const Package &package) const
         ? QStringLiteral("customFlatpak") : QStringLiteral("customNative");
     return QSettings(QStringLiteral("Aero7"), QStringLiteral("ProgramsCenter"))
         .value(QStringLiteral("%1/%2").arg(group, package.repository), false).toBool();
+}
+
+bool MainWindow::officialSourceConfigured(SoftwareSource source) const
+{
+    if (source != SoftwareSource::Aero7 && source != SoftwareSource::Arch) return false;
+    for (const QString &repository : m_backend.repositories())
+        if (SourcePolicy::fromRepository(repository) == source) return true;
+    return false;
+}
+
+bool MainWindow::officialSourceConfigured(const Package &package) const
+{
+    return officialSourceConfigured(package.source)
+        && m_backend.repositories().contains(package.repository)
+        && SourcePolicy::fromRepository(package.repository) == package.source;
 }
 
 QString MainWindow::sourceLabel(const Package &package) const
@@ -752,7 +757,7 @@ void MainWindow::showHome()
         for (const auto &package : m_packages) {
             if (!package.application) continue;
             if (!wanted.isEmpty() && !wanted.contains(package.name) && !wanted.contains(package.productId)) continue;
-            auto *card = new ProgramCard(package);
+            auto *card = new ProgramCard(package, officialSourceConfigured(package));
             connect(card, &ProgramCard::actionRequested, this, [this](const QString &id) { if (const auto *p = findPackage(id)) runAction(*p); });
             connect(card, &ProgramCard::detailsRequested, this, &MainWindow::showDetails);
             layout->addWidget(card);
@@ -787,7 +792,7 @@ void MainWindow::showResults(const QString &query, const QString &category)
         if (sourceId != QStringLiteral("all") && SourcePolicy::descriptor(package.source).id != sourceId) continue;
         auto *item = new QTreeWidgetItem({package.displayName, package.version, humanSize(package.installedSize), sourceLabel(package), statusText(package)});
         item->setIcon(0, packageArtwork(package));
-        item->setIcon(3, Aero7Icons::sourceIcon(package.source));
+        item->setIcon(3, Aero7Icons::sourceIcon(package.source, officialSourceConfigured(package)));
         item->setData(0, Qt::UserRole, package.productId);
         m_table->addTopLevelItem(item);
     }
@@ -805,6 +810,7 @@ void MainWindow::showInstalled()
     for (const auto &package : m_packages) if (package.state != PackageState::Available && package.application) {
         auto *item = new QTreeWidgetItem({package.displayName, package.installedVersion, humanSize(package.installedSize), sourceLabel(package), statusText(package)});
         item->setIcon(0, packageArtwork(package));
+        item->setIcon(3, Aero7Icons::sourceIcon(package.source, officialSourceConfigured(package)));
         item->setData(0, Qt::UserRole, package.productId);
         m_table->addTopLevelItem(item);
     }
@@ -827,6 +833,7 @@ void MainWindow::showUpdates()
         auto *group = SourcePolicy::isThirdParty(package.source) ? thirdParty : package.application ? applications : system;
         auto *item = new QTreeWidgetItem(group, {package.displayName, package.installedVersion + QStringLiteral(" → ") + package.version, humanSize(package.downloadSize), sourceLabel(package), QStringLiteral("Update available")});
         item->setIcon(0, packageArtwork(package));
+        item->setIcon(3, Aero7Icons::sourceIcon(package.source, officialSourceConfigured(package)));
         item->setData(0, Qt::UserRole, package.name);
     }
     for (auto *group : {system, applications, thirdParty}) {
@@ -877,7 +884,8 @@ void MainWindow::showDetails(const QString &id)
     header->addWidget(icon, 0, Qt::AlignTop);
     auto *headings = new QVBoxLayout;
     headings->addWidget(Win7Style::pageTitle(package.displayName));
-    auto *sourceBadge = new SourceBadge(package.source, package.repository);
+    auto *sourceBadge = new SourceBadge(package.source, package.repository,
+                                       officialSourceConfigured(package));
     headings->addWidget(sourceBadge);
     header->addLayout(headings, 1);
     layout->addLayout(header);
@@ -901,6 +909,7 @@ void MainWindow::showDetails(const QString &id)
     QComboBox *alternatives = nullptr;
     if (package.variants.size() > 1) {
         alternatives = new QComboBox;
+        alternatives->setIconSize(QSize(22, 22));
         int recommendedPriority = 0;
         for (const auto &variant : package.variants) recommendedPriority = std::max(recommendedPriority, variant.priority);
         for (int index = 0; index < package.variants.size(); ++index) {
@@ -908,7 +917,9 @@ void MainWindow::showDetails(const QString &id)
             const auto source = SourcePolicy::descriptor(variant.source);
             const QString name = variant.source == SoftwareSource::Unknown
                 ? QStringLiteral("External: %1").arg(variant.repository) : source.name;
-            alternatives->addItem(Aero7Icons::sourceIcon(variant.source), QStringLiteral("%1 — %2%3").arg(name, variant.version, variant.priority == recommendedPriority ? QStringLiteral(" (recommended)") : QString()), index);
+            const bool configured = officialSourceConfigured(variant.source)
+                && m_backend.repositories().contains(variant.repository);
+            alternatives->addItem(Aero7Icons::sourceIcon(variant.source, configured), QStringLiteral("%1 — %2%3").arg(name, variant.version, variant.priority == recommendedPriority ? QStringLiteral(" (recommended)") : QString()), index);
         }
         form->addRow(QStringLiteral("Install from:"), alternatives);
     } else form->addRow(QStringLiteral("Source:"), new QLabel(sourceLabel(package)));
@@ -929,7 +940,7 @@ void MainWindow::showDetails(const QString &id)
                 && variant.provider == package.provider) { alternatives->setCurrentIndex(index); break; }
         }
         connect(alternatives, &QComboBox::currentIndexChanged, &dialog,
-            [&package, alternatives, sourceBadge, warning, blocked, version, installedVersion, action](int index) {
+            [this, &package, alternatives, sourceBadge, warning, blocked, version, installedVersion, action](int index) {
                 const int selected = alternatives->itemData(index).toInt();
                 if (selected >= 0 && selected < package.variants.size()) {
                     const auto &variant = package.variants.at(selected);
@@ -942,7 +953,8 @@ void MainWindow::showDetails(const QString &id)
                     package.state = variant.state;
                     package.critical = variant.critical;
                     package.blockedReason = variant.blockedReason;
-                    sourceBadge->setSource(package.source, package.repository);
+                    sourceBadge->setSource(package.source, package.repository,
+                                           officialSourceConfigured(package));
                     warning->setText(SourcePolicy::warning(package.source));
                     warning->setVisible(SourcePolicy::isThirdParty(package.source));
                     blocked->setText(package.blockedReason);

@@ -64,6 +64,8 @@ private:
     void setLocation(const QString &location);
     bool sourceEnabled(SoftwareSource source) const;
     bool sourceEnabled(const Package &package) const;
+    bool officialSourceConfigured(SoftwareSource source) const;
+    bool officialSourceConfigured(const Package &package) const;
     QString sourceLabel(const Package &package) const;
     void refreshCustomSources();
     void addSource();

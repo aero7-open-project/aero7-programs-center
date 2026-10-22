@@ -105,6 +105,31 @@ QGroupBox { margin-top: 14px; border: 1px solid #c9d2db; background: #ffffff; }
 QGroupBox::title { subcontrol-origin: margin; left: 9px; padding: 0 4px; color: #1a5dab; }
 QCheckBox { spacing: 7px; }
 QComboBox { min-height: 22px; border: 1px solid #8e9ca8; background: white; padding: 0 5px; }
+/* Shared Aero scrollbar treatment for Home, lists, Settings and dialogs. */
+QScrollBar:vertical { width: 17px; margin: 17px 0; border: 1px solid #b7c4cf;
+  background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #e7eef4,stop:.48 #f7f9fb,stop:1 #d9e5ef); }
+QScrollBar:horizontal { height: 17px; margin: 0 17px; border: 1px solid #b7c4cf;
+  background: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #e7eef4,stop:.48 #f7f9fb,stop:1 #d9e5ef); }
+QScrollBar::handle:vertical, QScrollBar::handle:horizontal { min-height: 28px; min-width: 28px;
+  border: 1px solid #8fa7ba; border-radius: 2px;
+  background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #f9fcff,stop:.45 #dcecf7,stop:.52 #c0d7e8,stop:1 #eaf4fb); }
+QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover { border-color: #4b8fbd;
+  background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #f9fdff,stop:.45 #c5e8fa,stop:.52 #93c9e9,stop:1 #d5eefb); }
+QScrollBar::handle:vertical:pressed, QScrollBar::handle:horizontal:pressed { border-color: #3579a6; background: #9ccce9; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { border: 1px solid #9eafbf;
+  background: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #ffffff,stop:.5 #edf5fa,stop:1 #d7e5ef); }
+QScrollBar::add-line:vertical:hover, QScrollBar::sub-line:vertical:hover,
+QScrollBar::add-line:horizontal:hover, QScrollBar::sub-line:horizontal:hover { border-color: #4b8fbd; background: #d8effc; }
+QScrollBar::add-line:vertical { subcontrol-position: bottom; subcontrol-origin: margin; height: 17px; }
+QScrollBar::sub-line:vertical { subcontrol-position: top; subcontrol-origin: margin; height: 17px; }
+QScrollBar::add-line:horizontal { subcontrol-position: right; subcontrol-origin: margin; width: 17px; }
+QScrollBar::sub-line:horizontal { subcontrol-position: left; subcontrol-origin: margin; width: 17px; }
+QScrollBar::up-arrow:vertical { image: url(:/scrollbar/up.svg); width: 8px; height: 8px; }
+QScrollBar::down-arrow:vertical { image: url(:/scrollbar/down.svg); width: 8px; height: 8px; }
+QScrollBar::left-arrow:horizontal { image: url(:/scrollbar/left.svg); width: 8px; height: 8px; }
+QScrollBar::right-arrow:horizontal { image: url(:/scrollbar/right.svg); width: 8px; height: 8px; }
+QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
 QMessageBox, QProgressDialog { background: #f5f5f5; }
 )");
 }

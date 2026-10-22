@@ -3,6 +3,7 @@
 #include <QDebug>
 #include <QFile>
 #include <QIcon>
+#include <QPainter>
 #include <QSize>
 #include <QString>
 #include "sources/SourcePolicy.h"
@@ -63,7 +64,7 @@ inline QIcon resource(const QString &path, const QString &fallback)
     return icon(fallback);
 }
 
-inline QIcon sourceIcon(SoftwareSource source)
+inline QIcon sourceIcon(SoftwareSource source, bool officialConfigured = false)
 {
     QString name;
     switch (source) {
@@ -74,7 +75,30 @@ inline QIcon sourceIcon(SoftwareSource source)
     case SoftwareSource::Flathub: name = QStringLiteral("flathub"); break;
     default: return icon(QStringLiteral("warning"));
     }
-    return resource(QStringLiteral(":/sources/%1.png").arg(name), QStringLiteral("warning"));
+    const QIcon logo = resource(QStringLiteral(":/sources/%1.png").arg(name), QStringLiteral("warning"));
+    if (!officialConfigured || (source != SoftwareSource::Aero7 && source != SoftwareSource::Arch))
+        return logo;
+
+    // Keep the source logo and its configured check together at every icon size.
+    // Both images come from resources embedded in this application.
+    QIcon marked;
+    const QIcon check = icon(QStringLiteral("success"));
+    for (const int size : {16, 20, 22, 24, 32, 38, 48, 64, 72}) {
+        QPixmap image(size, size);
+        image.fill(Qt::transparent);
+        QPainter painter(&image);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const int logoSize = size * 4 / 5;
+        painter.drawPixmap(0, 0, logo.pixmap(logoSize, logoSize));
+        const int checkSize = qMax(8, size * 2 / 5);
+        const QRect checkRect(size - checkSize, size - checkSize, checkSize, checkSize);
+        painter.setPen(QPen(QColor(QStringLiteral("#ffffff")), qMax(1, size / 16)));
+        painter.setBrush(Qt::white);
+        painter.drawEllipse(checkRect.adjusted(0, 0, -1, -1));
+        painter.drawPixmap(checkRect, check.pixmap(checkSize, checkSize));
+        marked.addPixmap(image);
+    }
+    return marked;
 }
 
 } // namespace Aero7Icons

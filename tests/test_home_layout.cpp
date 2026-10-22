@@ -13,6 +13,7 @@
 #include <QStackedWidget>
 #include <QTemporaryDir>
 #include <QToolButton>
+#include <QWheelEvent>
 #include <QtTest>
 
 class HomeLayoutTest : public QObject {
@@ -91,8 +92,10 @@ private slots:
         QVERIFY(sidebar);
         QVERIFY(pages);
         QToolButton *settingsButton = nullptr;
-        for (auto *button : window.findChildren<QToolButton *>())
+        for (auto *button : window.findChildren<QToolButton *>()) {
             if (button->text() == "Settings") settingsButton = button;
+            QVERIFY(button->text() != "Control Panel");
+        }
         QVERIFY(settingsButton);
         for (int row = 0; row < sidebar->count(); ++row)
             QVERIFY(sidebar->item(row)->text() != "Software Sources");
@@ -116,6 +119,41 @@ private slots:
         QVERIFY(!settingsWindow->isVisible());
         settingsButton->click();
         QVERIFY(settingsWindow->isVisible());
+    }
+    void scrollbarUsesBundledStyleAndStillScrolls() {
+        MainWindow window(parseDeepLink({"app", "--home"}));
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *home = window.findChild<QScrollArea *>("homeScroll");
+        QVERIFY(home);
+        QToolButton *button = nullptr;
+        for (auto *candidate : window.findChildren<QToolButton *>())
+            if (candidate->text() == QStringLiteral("Settings")) button = candidate;
+        QVERIFY(button);
+        button->click();
+        auto *dialog = window.findChild<QDialog *>("settingsWindow");
+        QVERIFY(dialog);
+        auto *settingsScroll = dialog->findChild<QScrollArea *>("settingsScroll");
+        QVERIFY(settingsScroll);
+        QVERIFY(window.styleSheet().contains(QStringLiteral("QScrollBar::handle")));
+        QVERIFY(dialog->styleSheet().contains(QStringLiteral("QScrollBar::handle")));
+        QCOMPARE(settingsScroll->verticalScrollBar()->width(), 17);
+        for (const QSize size : {QSize(900, 720), QSize(720, 560)}) {
+            dialog->resize(size);
+            QTRY_COMPARE(dialog->size(), size);
+            auto *bar = settingsScroll->verticalScrollBar();
+            QVERIFY(bar->maximum() > 0);
+            bar->setValue(0);
+            QWheelEvent wheel(QPointF(10, 10), QPointF(10, 10), QPoint(), QPoint(0, -120),
+                              Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+            QApplication::sendEvent(settingsScroll->viewport(), &wheel);
+            QVERIFY(bar->value() > 0);
+            bar->setValue(0);
+            bar->setFocus();
+            QTest::keyClick(bar, Qt::Key_Down);
+            QVERIFY(bar->value() > 0);
+        }
+        QVERIFY(home->horizontalScrollBar()->maximum() == 0);
     }
 };
 QTEST_MAIN(HomeLayoutTest)
