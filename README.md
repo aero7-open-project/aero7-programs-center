@@ -6,7 +6,7 @@ locally indexed package metadata, viewing package details, managing installed
 applications, and performing complete Arch Linux updates.
 
 > [!IMPORTANT]
- > Programs Center remains Beta software. **Aero7 Beta 2 is NOT publicly
+> Programs Center remains Beta software. **Aero7 Beta 2 is NOT publicly
 > released**; this planned optional integration remains in bug fixing and
 > stability testing, and is not installed by default in test builds.
 > Enable or remove it through **Control Panel > Programs and Features > Turn
