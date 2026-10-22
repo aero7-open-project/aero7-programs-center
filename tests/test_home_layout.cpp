@@ -49,6 +49,10 @@ private slots:
         fill(host);
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *commands = window.findChild<QWidget *>("commandBar");
+        QVERIFY(commands);
+        const auto commandButtons = commands->findChildren<QToolButton *>();
+        QCOMPARE(commandButtons.size(), 5);
         for (int width : {1600, 1200, 900, 720, 1200}) {
             window.resize(width, 780);
             // Wayland commits compositor-approved sizes asynchronously. Wait
@@ -56,6 +60,12 @@ private slots:
             // geometry or catch the scroll area's intermediate resize.
             QTRY_COMPARE(window.size(), QSize(width, 780));
             QTRY_COMPARE(scroll->widget()->width(), scroll->viewport()->width());
+            for (auto *button : commandButtons) {
+                QCOMPARE(button->toolButtonStyle(), width < 1000
+                             ? Qt::ToolButtonIconOnly : Qt::ToolButtonTextBesideIcon);
+                QCOMPARE(button->toolTip(), button->text());
+                QVERIFY(!button->icon().isNull());
+            }
             qInfo() << "Home geometry" << "requested" << width << "window" << window.size()
                     << "content" << scroll->widget()->size() << "viewport" << scroll->viewport()->size()
                     << "minimum" << scroll->widget()->minimumSizeHint();

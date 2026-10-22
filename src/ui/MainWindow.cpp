@@ -133,6 +133,16 @@ void MainWindow::closeEvent(QCloseEvent *event)
     QMainWindow::closeEvent(event);
 }
 
+void MainWindow::resizeEvent(QResizeEvent *event)
+{
+    QMainWindow::resizeEvent(event);
+    const bool compact = width() < 1000;
+    if (compact == m_compactCommands) return;
+    m_compactCommands = compact;
+    for (auto *button : m_commandButtons)
+        button->setToolButtonStyle(compact ? Qt::ToolButtonIconOnly : Qt::ToolButtonTextBesideIcon);
+}
+
 void MainWindow::buildUi()
 {
     auto *navigation = new QToolBar;
@@ -169,7 +179,14 @@ void MainWindow::buildUi()
     auto *updates = commandButton(QStringLiteral("Check for updates"), QStringLiteral("update"));
     auto *installed = commandButton(QStringLiteral("Installed programs"), QStringLiteral("package"));
     auto *settings = commandButton(QStringLiteral("Settings"), QStringLiteral("settings"));
-    for (auto *button : {home, discover, updates, installed, settings}) commands->addWidget(button);
+    for (auto *button : {home, discover, updates, installed, settings}) {
+        button->setMinimumWidth(40);
+        button->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        button->setToolTip(button->text());
+        button->setAccessibleName(button->text());
+        commands->addWidget(button);
+        m_commandButtons.append(button);
+    }
     commands->addStretch();
     auto *body = new QWidget;
     auto *bodyLayout = new QHBoxLayout(body);
