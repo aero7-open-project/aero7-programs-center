@@ -6,8 +6,9 @@ locally indexed package metadata, viewing package details, managing installed
 applications, and performing complete Arch Linux updates.
 
 > [!IMPORTANT]
-> Programs Center remains Beta software. It is included in the Aero7 Beta 2
-> package set as an optional feature and is not installed on a fresh desktop.
+ > Programs Center remains Beta software. **Aero7 Beta 2 is NOT publicly
+> released**; this planned optional integration remains in bug fixing and
+> stability testing, and is not installed by default in test builds.
 > Enable or remove it through **Control Panel > Programs and Features > Turn
 > Aero7 features on or off**. Beta 2 retains a checksum-verified copy of the
 > package locally, so this feature can be enabled again without internet.
@@ -30,7 +31,7 @@ signed `[aero7]` repository. AUR and Flatpak are not enabled.
 
 ## Installation and updates
 
-On Aero7 Beta 2, use **Turn Aero7 features on or off**. This keeps the feature
+On the eventual Aero7 Beta 2 release, use **Turn Aero7 features on or off**. This keeps the feature
 state, package verification, authentication, and retained-data explanation in
 one place. Once installed, Programs Center receives normal updates from the
 signed Aero7 package repository.
