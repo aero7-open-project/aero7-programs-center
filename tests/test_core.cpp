@@ -2,15 +2,30 @@
 #include "metadata/Metadata.h"
 #include "metadata/BrowseCategories.h"
 #include "models/Package.h"
+#include "backend/PackageTransaction.h"
 #include "sources/SourceCatalog.h"
 #include "sources/SourceRegistration.h"
 #include <QFile>
 #include <QSet>
 #include <QTemporaryDir>
 #include <QtTest>
-class CoreTest:public QObject{Q_OBJECT
+class CoreTest : public QObject {
+ Q_OBJECT
 private slots:
  void sizes(){QCOMPARE(humanSize(1024),QString("1.0 KiB"));QCOMPARE(humanSize(1024*1024),QString("1.0 MiB"));}
+ void nativePackageTargets(){
+  using Transaction=PackageTransaction;
+  QVERIFY(Transaction::isValidNativeTarget(Transaction::Install,QStringLiteral("extra/angelfish")));
+  QVERIFY(Transaction::isValidNativeTarget(Transaction::Install,QStringLiteral("aero7/aero7-programs-center-git")));
+  QVERIFY(Transaction::isValidNativeTarget(Transaction::Install,QStringLiteral("angelfish")));
+  QVERIFY(Transaction::isValidNativeTarget(Transaction::Remove,QStringLiteral("angelfish")));
+  for(const QString target:{QStringLiteral("/angelfish"),QStringLiteral("extra/"),
+        QStringLiteral("extra//angelfish"),QStringLiteral("extra/angelfish/other"),
+        QStringLiteral("../angelfish"),QStringLiteral("extra/../angelfish"),
+        QStringLiteral("extra/angelfish\n")})
+   QVERIFY2(!Transaction::isValidNativeTarget(Transaction::Install,target),qPrintable(target));
+  QVERIFY(!Transaction::isValidNativeTarget(Transaction::Remove,QStringLiteral("extra/angelfish")));
+ }
  void critical(){QVERIFY(isCriticalPackage("pacman"));QVERIFY(isCriticalPackage("linux-zen"));QVERIFY(!isCriticalPackage("vlc"));}
  void sources(){QCOMPARE(friendlyRepository("aero7"),QString("Aero7"));QCOMPARE(friendlyRepository("extra"),QString("Arch Linux"));}
  void sourceClassification(){QCOMPARE(SourcePolicy::fromRepository("core-testing"),SoftwareSource::Arch);QCOMPARE(SourcePolicy::fromRepository("vendor-testing"),SoftwareSource::Unknown);QVERIFY(SourcePolicy::isThirdParty(SoftwareSource::Flathub));QVERIFY(!SourcePolicy::isThirdParty(SoftwareSource::Aero7));}

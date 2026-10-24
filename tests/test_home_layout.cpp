@@ -53,6 +53,10 @@ private slots:
         QVERIFY(commands);
         const auto commandButtons = commands->findChildren<QToolButton *>();
         QCOMPARE(commandButtons.size(), 5);
+        QCOMPARE(QStringList({commandButtons.at(0)->text(), commandButtons.at(1)->text(),
+                              commandButtons.at(2)->text(), commandButtons.at(3)->text(),
+                              commandButtons.at(4)->text()}),
+                 QStringList({"Home", "Find Program", "Updates", "Installed", "Settings"}));
         for (int width : {1600, 1200, 900, 720, 1200}) {
             window.resize(width, 780);
             // Wayland commits compositor-approved sizes asynchronously. Wait
@@ -61,11 +65,16 @@ private slots:
             QTRY_COMPARE(window.size(), QSize(width, 780));
             QTRY_COMPARE(scroll->widget()->width(), scroll->viewport()->width());
             for (auto *button : commandButtons) {
-                QCOMPARE(button->toolButtonStyle(), width < 1000
-                             ? Qt::ToolButtonIconOnly : Qt::ToolButtonTextBesideIcon);
-                QCOMPARE(button->toolTip(), button->text());
+                QCOMPARE(button->toolButtonStyle(), Qt::ToolButtonTextBesideIcon);
+                QVERIFY2(button->width() >= button->sizeHint().width(),
+                         qPrintable(QString("Command label clipped at width %1: %2 (%3 < %4)")
+                             .arg(width).arg(button->text()).arg(button->width()).arg(button->sizeHint().width())));
+                QVERIFY(!button->toolTip().isEmpty());
+                QCOMPARE(button->accessibleName(), button->toolTip());
                 QVERIFY(!button->icon().isNull());
             }
+            for (int index = 1; index < commandButtons.size(); ++index)
+                QVERIFY(commandButtons.at(index - 1)->geometry().right() < commandButtons.at(index)->geometry().left());
             qInfo() << "Home geometry" << "requested" << width << "window" << window.size()
                     << "content" << scroll->widget()->size() << "viewport" << scroll->viewport()->size()
                     << "minimum" << scroll->widget()->minimumSizeHint();

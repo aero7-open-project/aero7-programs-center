@@ -17,7 +17,6 @@ class QLabel;
 class QLineEdit;
 class QListWidget;
 class QPushButton;
-class QResizeEvent;
 class QStackedWidget;
 class QToolButton;
 class QTreeWidget;
@@ -31,7 +30,6 @@ public:
 
 protected:
     void closeEvent(QCloseEvent *) override;
-    void resizeEvent(QResizeEvent *) override;
 
 private:
     AlpmBackend m_backend;
@@ -56,8 +54,6 @@ private:
     QTreeWidget *m_table = nullptr;
     QVBoxLayout *m_customSourcesLayout = nullptr;
     QWidget *m_recommendedSection = nullptr;
-    QList<QToolButton *> m_commandButtons;
-    bool m_compactCommands = false;
 
     void buildUi();
     void loadData();

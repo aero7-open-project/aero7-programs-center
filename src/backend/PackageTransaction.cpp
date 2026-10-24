@@ -25,12 +25,36 @@ PackageTransaction::PackageTransaction(QObject *p):QObject(p){
   m_followUpProgram.clear();m_followUpArguments.clear();m_output.clear();emit finished(ok,details);
  });
 }
+bool PackageTransaction::isValidNativeTarget(Operation op, const QString &target){
+ static const QRegularExpression name(QStringLiteral("\\A[A-Za-z0-9@._+:-]+\\z"));
+ const QStringList parts=target.split(QLatin1Char('/'));
+ if(parts.size()!=1 && (op!=Install || parts.size()!=2))return false;
+ for(const auto &part:parts)
+  if(part==QStringLiteral(".") || part==QStringLiteral("..") || !name.match(part).hasMatch())return false;
+ return true;
+}
+
 bool PackageTransaction::start(Operation op,const QStringList &packages){
- if(m_process.state()!=QProcess::NotRunning||QFileInfo::exists("/var/lib/pacman/db.lck"))return false;
- static const QRegularExpression valid("^[a-zA-Z0-9@._+:-]+$"); for(const auto&p:packages)if(!valid.match(p).hasMatch())return false;
+ m_startError.clear();
+ if(m_process.state()!=QProcess::NotRunning){m_startError=QStringLiteral("A software change is already running.");return false;}
+ if(QFileInfo::exists(QStringLiteral("/var/lib/pacman/db.lck"))){m_startError=QStringLiteral("Another package transaction is in progress.");return false;}
+ if((op==Install || op==Remove) && packages.isEmpty()){
+  m_startError=QStringLiteral("No package was selected.");return false;
+ }
+ if(op==UpdateAll && !packages.isEmpty()){
+  m_startError=QStringLiteral("Update All does not accept individual packages.");return false;
+ }
+ for(const auto &target:packages)if(!isValidNativeTarget(op,target)){
+  m_startError=QStringLiteral("The selected package target is invalid.");return false;
+ }
  QString action=op==Install?"install":op==Remove?"remove":op==UpdateSelected?"update-selected":"update-all";
  QStringList args={"--disable-internal-agent","/usr/lib/aero7-programs-center/aero7-programs-center-helper",action}; args+=packages;
- emit progress("Authenticating…",0,{}); m_process.start("pkexec",args); return true;
+ emit progress("Authenticating…",0,{}); m_process.start("pkexec",args);
+ if(!m_process.waitForStarted(3000)){
+  m_startError=QStringLiteral("The authorization tool could not start: %1").arg(m_process.errorString());
+  return false;
+ }
+ return true;
 }
 
 bool PackageTransaction::startFlatpak(Operation op,const QString &applicationId,const QString &remote){

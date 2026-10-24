@@ -74,12 +74,15 @@ QLabel *sectionHeading(const QString &text)
     return label;
 }
 
-QToolButton *commandButton(const QString &text, const QString &icon)
+QToolButton *commandButton(const QString &text, const QString &icon, const QString &description)
 {
     auto *button = new QToolButton;
     button->setText(text);
     button->setIcon(Aero7Icons::icon(icon));
+    button->setIconSize(QSize(18, 18));
     button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    button->setToolTip(description);
+    button->setAccessibleName(description);
     button->setCursor(Qt::PointingHandCursor);
     return button;
 }
@@ -133,16 +136,6 @@ void MainWindow::closeEvent(QCloseEvent *event)
     QMainWindow::closeEvent(event);
 }
 
-void MainWindow::resizeEvent(QResizeEvent *event)
-{
-    QMainWindow::resizeEvent(event);
-    const bool compact = width() < 1000;
-    if (compact == m_compactCommands) return;
-    m_compactCommands = compact;
-    for (auto *button : m_commandButtons)
-        button->setToolButtonStyle(compact ? Qt::ToolButtonIconOnly : Qt::ToolButtonTextBesideIcon);
-}
-
 void MainWindow::buildUi()
 {
     auto *navigation = new QToolBar;
@@ -174,18 +167,14 @@ void MainWindow::buildUi()
     shellLayout->setSpacing(0);
     QHBoxLayout *commands = nullptr;
     shellLayout->addWidget(Win7Style::commandBar(&commands));
-    auto *home = commandButton(QStringLiteral("Home"), QStringLiteral("home"));
-    auto *discover = commandButton(QStringLiteral("Find a program"), QStringLiteral("search"));
-    auto *updates = commandButton(QStringLiteral("Check for updates"), QStringLiteral("update"));
-    auto *installed = commandButton(QStringLiteral("Installed programs"), QStringLiteral("package"));
-    auto *settings = commandButton(QStringLiteral("Settings"), QStringLiteral("settings"));
+    auto *home = commandButton(QStringLiteral("Home"), QStringLiteral("home"), QStringLiteral("Home"));
+    auto *discover = commandButton(QStringLiteral("Find Program"), QStringLiteral("search"), QStringLiteral("Find a program"));
+    auto *updates = commandButton(QStringLiteral("Updates"), QStringLiteral("update"), QStringLiteral("Check for updates"));
+    auto *installed = commandButton(QStringLiteral("Installed"), QStringLiteral("package"), QStringLiteral("Installed programs"));
+    auto *settings = commandButton(QStringLiteral("Settings"), QStringLiteral("settings"), QStringLiteral("Settings"));
     for (auto *button : {home, discover, updates, installed, settings}) {
-        button->setMinimumWidth(40);
-        button->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-        button->setToolTip(button->text());
-        button->setAccessibleName(button->text());
+        button->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
         commands->addWidget(button);
-        m_commandButtons.append(button);
     }
     commands->addStretch();
     auto *body = new QWidget;
@@ -1127,6 +1116,12 @@ void MainWindow::runAction(const Package &package, bool remove)
     const bool started = package.provider == PackageProvider::Flatpak ? transaction->startFlatpak(operation, package.name, package.repository)
         : passwordless ? transaction->startTrustedInstall(package.repository, package.name)
         : transaction->start(operation, {nativeTarget});
-    if (!started) { progress->close(); transaction->deleteLater(); QMessageBox::warning(this, QStringLiteral("Programs Center"), QStringLiteral("The software change could not be started.")); }
+    if (!started) {
+        const QString reason=transaction->lastStartError();
+        progress->close(); transaction->deleteLater();
+        QMessageBox::warning(this, QStringLiteral("Programs Center"),
+            QStringLiteral("The software change could not be started.%1")
+                .arg(reason.isEmpty() ? QString() : QStringLiteral("\n\n")+reason));
+    }
     else progress->show();
 }
