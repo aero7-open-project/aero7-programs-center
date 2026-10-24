@@ -3,6 +3,7 @@
 #include "metadata/BrowseCategories.h"
 #include "models/Package.h"
 #include "backend/PackageTransaction.h"
+#include "backend/TrustedInstallPlan.h"
 #include "sources/SourceCatalog.h"
 #include "sources/SourceRegistration.h"
 #include <QFile>
@@ -71,6 +72,47 @@ private slots:
   QCOMPARE(retry.count(),1);
   QVERIFY(trace.open(QIODevice::ReadOnly));
   QCOMPARE(trace.readAll(),QByteArray("attempt\nattempt\n"));
+ }
+ void trustedPlanShowsDeclaredVersusActual(){
+  if(QFileInfo::exists(QStringLiteral("/var/lib/pacman/db.lck"))) QSKIP("Another pacman transaction is active");
+  QTemporaryDir directory;
+  QVERIFY(directory.isValid());
+  QFile fake(directory.filePath(QStringLiteral("pacman")));
+  QVERIFY(fake.open(QIODevice::WriteOnly));
+  fake.write(R"(#!/bin/sh
+case "$1 $2" in
+  '--sync --needed') printf 'extra/suitesparse\nextra/gimp\n';;
+  '--sync --info') cat <<'METADATA'
+Repository      : extra
+Name            : suitesparse
+Conflicts With  : None
+Replaces        : suitesparse64<7.1.0
+
+Repository      : extra
+Name            : gimp
+Conflicts With  : None
+Replaces        : None
+METADATA
+    ;;
+  '--query --quiet') printf 'base\nfirefox\n';;
+  *) exit 2;;
+esac
+)");
+  fake.close();
+  QVERIFY(fake.setPermissions(QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
+  const auto plan=TrustedInstallPlan::inspect(QStringLiteral("extra/gimp"),fake.fileName());
+  QVERIFY2(plan.complete(),qPrintable(plan.error));
+  QCOMPARE(plan.newPackages,QStringList({QStringLiteral("extra/suitesparse"),QStringLiteral("extra/gimp")}));
+  QVERIFY(plan.installedPackagesInPlan.isEmpty());
+  QCOMPARE(plan.declarations.size(),1);
+  QCOMPARE(plan.declarations.first().package,QStringLiteral("extra/suitesparse"));
+  QCOMPARE(plan.declarations.first().field,QStringLiteral("Replaces"));
+  QCOMPARE(plan.declarations.first().expression,QStringLiteral("suitesparse64<7.1.0"));
+  QVERIFY(!plan.declarations.first().namedPackageInstalled);
+  QVERIFY(plan.detailsText().contains(QStringLiteral("suitesparse64 is not installed by name")));
+  QVERIFY(plan.detailsText().contains(QStringLiteral("Actual removals/replacements: not determined")));
+  const auto bad=TrustedInstallPlan::inspect(QStringLiteral("extra/gimp;touch /tmp/bad"),fake.fileName());
+  QVERIFY(!bad.complete());
  }
  void critical(){QVERIFY(isCriticalPackage("pacman"));QVERIFY(isCriticalPackage("linux-zen"));QVERIFY(!isCriticalPackage("vlc"));}
  void sources(){QCOMPARE(friendlyRepository("aero7"),QString("Aero7"));QCOMPARE(friendlyRepository("extra"),QString("Arch Linux"));}

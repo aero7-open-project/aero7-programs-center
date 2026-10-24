@@ -8,6 +8,7 @@
 #include "Win7Style.h"
 #include "WrappingGridLayout.h"
 #include "backend/PackageTransaction.h"
+#include "backend/TrustedInstallPlan.h"
 #include "sources/SourceRegistration.h"
 
 #include <QCheckBox>
@@ -24,6 +25,7 @@
 #include <QHeaderView>
 #include <QFile>
 #include <QFileInfo>
+#include <QFutureWatcher>
 #include <QHash>
 #include <QLabel>
 #include <QLineEdit>
@@ -49,6 +51,7 @@
 #include <QTimer>
 #include <QTemporaryFile>
 #include <QUrl>
+#include <QtConcurrent>
 
 #include <algorithm>
 
@@ -1111,30 +1114,52 @@ void MainWindow::runAction(const Package &package, bool remove)
         else QMessageBox::critical(this, QStringLiteral("Programs Center"), QStringLiteral("The software change could not be completed.\n\n%1").arg(details.left(800)));
     });
     connect(transaction, &PackageTransaction::normalAuthenticationRequired, this,
-        [this, transaction, progress, nativeTarget, displayName](const QString &reason) {
-            progress->close();
-            QMessageBox choice(QMessageBox::Warning, QStringLiteral("Administrator authentication required"),
-                QStringLiteral("The password-free safeguard stopped the install of %1 because a planned package declares a possible replacement or conflict. No packages were changed.\n\nContinue through the normal administrator-authenticated installer?").arg(displayName),
-                QMessageBox::NoButton, this);
-            choice.setDetailedText(reason.left(800));
-            auto *retry = choice.addButton(QStringLiteral("Install with password"), QMessageBox::AcceptRole);
-            auto *cancel = choice.addButton(QStringLiteral("Cancel"), QMessageBox::RejectRole);
-            choice.setDefaultButton(qobject_cast<QPushButton *>(cancel));
-            choice.exec();
-            if (choice.clickedButton() != retry) {
-                progress->deleteLater(); transaction->deleteLater();
-                return;
-            }
-            QTimer::singleShot(0, this, [this, transaction, progress, nativeTarget] {
-                if (!transaction->start(PackageTransaction::Install, {nativeTarget})) {
-                    const QString error = transaction->lastStartError();
+        [this, transaction, progress, nativeTarget, displayName](const QString &) {
+            progress->setLabelText(QStringLiteral("Checking the package plan…"));
+            progress->show();
+            auto *watcher = new QFutureWatcher<TrustedInstallPlan>(transaction);
+            connect(watcher, &QFutureWatcher<TrustedInstallPlan>::finished, this,
+                [this, watcher, transaction, progress, nativeTarget, displayName] {
+                    const TrustedInstallPlan plan = watcher->result();
+                    watcher->deleteLater();
+                    progress->close();
+                    if (!plan.complete() || plan.declarations.isEmpty()) {
+                        progress->deleteLater(); transaction->deleteLater();
+                        QMessageBox::warning(this, QStringLiteral("Programs Center"),
+                            QStringLiteral("The password-free install was stopped, but its package changes could not be verified. No authenticated retry was started.\n\n%1")
+                                .arg(plan.complete() ? QStringLiteral("No matching conflict declaration was found in the current package snapshot.") : plan.error));
+                        return;
+                    }
+                    const auto &trigger = plan.declarations.first();
+                    const QString namedStatus = trigger.namedPackageInstalled
+                        ? QStringLiteral("%1 is installed by name; whether it would be removed is not confirmed.").arg(trigger.namedPackage)
+                        : QStringLiteral("%1 is not installed by name; no direct replacement of it is shown.").arg(trigger.namedPackage);
+                    QMessageBox choice(QMessageBox::Warning, QStringLiteral("Administrator authentication required"),
+                        QStringLiteral("The password-free safeguard stopped the install of %1. %2 declares %3: %4. %5 No packages were changed.\n\nShow details lists every package in the dry-run plan and its declarations. Continue through the normal administrator-authenticated installer?")
+                            .arg(displayName, trigger.package, trigger.field, trigger.expression, namedStatus),
+                        QMessageBox::NoButton, this);
+                    choice.setTextFormat(Qt::PlainText);
+                    choice.setDetailedText(plan.detailsText());
+                    auto *retry = choice.addButton(QStringLiteral("Install with password"), QMessageBox::AcceptRole);
+                    auto *cancel = choice.addButton(QStringLiteral("Cancel"), QMessageBox::RejectRole);
+                    choice.setDefaultButton(qobject_cast<QPushButton *>(cancel));
+                    choice.exec();
+                    if (choice.clickedButton() != retry) {
                     progress->deleteLater(); transaction->deleteLater();
-                    QMessageBox::warning(this, QStringLiteral("Programs Center"),
-                        QStringLiteral("The authenticated install could not be started.\n\n%1").arg(error));
-                    return;
-                }
-                progress->show();
-            });
+                        return;
+                    }
+                    QTimer::singleShot(0, this, [this, transaction, progress, nativeTarget] {
+                        if (!transaction->start(PackageTransaction::Install, {nativeTarget})) {
+                            const QString error = transaction->lastStartError();
+                            progress->deleteLater(); transaction->deleteLater();
+                            QMessageBox::warning(this, QStringLiteral("Programs Center"),
+                                QStringLiteral("The authenticated install could not be started.\n\n%1").arg(error));
+                            return;
+                        }
+                        progress->show();
+                    });
+                });
+            watcher->setFuture(QtConcurrent::run([nativeTarget] { return TrustedInstallPlan::inspect(nativeTarget); }));
         });
     const auto operation = remove ? PackageTransaction::Remove : PackageTransaction::Install;
     const bool passwordless = !remove && (package.source == SoftwareSource::Aero7 || package.source == SoftwareSource::Arch)

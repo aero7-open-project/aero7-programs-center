@@ -16,6 +16,7 @@ add_library(programs-center-core
   src/backend/PackageBackend.h
   src/backend/AlpmBackend.cpp
   src/backend/PackageTransaction.cpp
+  src/backend/TrustedInstallPlan.cpp
   src/metadata/Metadata.cpp
   src/models/Package.cpp
   src/sources/SourcePolicy.cpp
