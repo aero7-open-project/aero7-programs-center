@@ -1101,24 +1101,51 @@ void MainWindow::runAction(const Package &package, bool remove)
     progress->setWindowTitle(verb + QStringLiteral(" Software"));
     progress->setCancelButton(nullptr);
     progress->setWindowModality(Qt::WindowModal);
+    const QString nativeTarget = !remove && !package.repository.isEmpty() && package.repository != QStringLiteral("local")
+        ? package.repository + QLatin1Char('/') + package.name : package.name;
+    const QString displayName = package.displayName;
     connect(transaction, &PackageTransaction::progress, progress, [progress](const QString &phase, int, const QString &detail) { progress->setLabelText(phase + (detail.isEmpty() ? QString() : QStringLiteral("\n") + detail.left(240))); });
     connect(transaction, &PackageTransaction::finished, this, [this, transaction, progress](bool ok, const QString &details) {
-        progress->close(); transaction->deleteLater();
+        progress->close(); progress->deleteLater(); transaction->deleteLater();
         if (ok) { QMessageBox::information(this, QStringLiteral("Programs Center"), QStringLiteral("The software change finished successfully.")); loadData(); showHome(); }
         else QMessageBox::critical(this, QStringLiteral("Programs Center"), QStringLiteral("The software change could not be completed.\n\n%1").arg(details.left(800)));
     });
+    connect(transaction, &PackageTransaction::normalAuthenticationRequired, this,
+        [this, transaction, progress, nativeTarget, displayName](const QString &reason) {
+            progress->close();
+            QMessageBox choice(QMessageBox::Warning, QStringLiteral("Administrator authentication required"),
+                QStringLiteral("The password-free safeguard stopped the install of %1 because a planned package declares a possible replacement or conflict. No packages were changed.\n\nContinue through the normal administrator-authenticated installer?").arg(displayName),
+                QMessageBox::NoButton, this);
+            choice.setDetailedText(reason.left(800));
+            auto *retry = choice.addButton(QStringLiteral("Install with password"), QMessageBox::AcceptRole);
+            auto *cancel = choice.addButton(QStringLiteral("Cancel"), QMessageBox::RejectRole);
+            choice.setDefaultButton(qobject_cast<QPushButton *>(cancel));
+            choice.exec();
+            if (choice.clickedButton() != retry) {
+                progress->deleteLater(); transaction->deleteLater();
+                return;
+            }
+            QTimer::singleShot(0, this, [this, transaction, progress, nativeTarget] {
+                if (!transaction->start(PackageTransaction::Install, {nativeTarget})) {
+                    const QString error = transaction->lastStartError();
+                    progress->deleteLater(); transaction->deleteLater();
+                    QMessageBox::warning(this, QStringLiteral("Programs Center"),
+                        QStringLiteral("The authenticated install could not be started.\n\n%1").arg(error));
+                    return;
+                }
+                progress->show();
+            });
+        });
     const auto operation = remove ? PackageTransaction::Remove : PackageTransaction::Install;
     const bool passwordless = !remove && (package.source == SoftwareSource::Aero7 || package.source == SoftwareSource::Arch)
         && QStringList{QStringLiteral("aero7"),QStringLiteral("core"),QStringLiteral("extra"),QStringLiteral("multilib")}.contains(package.repository)
         && trustedInstallAllowed();
-    const QString nativeTarget = !remove && !package.repository.isEmpty() && package.repository != QStringLiteral("local")
-        ? package.repository + QLatin1Char('/') + package.name : package.name;
     const bool started = package.provider == PackageProvider::Flatpak ? transaction->startFlatpak(operation, package.name, package.repository)
         : passwordless ? transaction->startTrustedInstall(package.repository, package.name)
         : transaction->start(operation, {nativeTarget});
     if (!started) {
         const QString reason=transaction->lastStartError();
-        progress->close(); transaction->deleteLater();
+        progress->close(); progress->deleteLater(); transaction->deleteLater();
         QMessageBox::warning(this, QStringLiteral("Programs Center"),
             QStringLiteral("The software change could not be started.%1")
                 .arg(reason.isEmpty() ? QString() : QStringLiteral("\n\n")+reason));

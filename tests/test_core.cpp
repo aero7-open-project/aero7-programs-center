@@ -6,6 +6,7 @@
 #include "sources/SourceCatalog.h"
 #include "sources/SourceRegistration.h"
 #include <QFile>
+#include <QFileInfo>
 #include <QSet>
 #include <QTemporaryDir>
 #include <QtTest>
@@ -25,6 +26,51 @@ private slots:
         QStringLiteral("extra/angelfish\n")})
    QVERIFY2(!Transaction::isValidNativeTarget(Transaction::Install,target),qPrintable(target));
   QVERIFY(!Transaction::isValidNativeTarget(Transaction::Remove,QStringLiteral("extra/angelfish")));
+ }
+ void trustedInstallRequiresExplicitRetry(){
+  using Transaction=PackageTransaction;
+  const QString oldReason=QStringLiteral("This install would replace or conflict with an existing package; normal authentication is required.");
+  const QString newReason=QStringLiteral("A planned package declares a possible replacement or conflict; password-free install is blocked. Normal authentication is required.");
+  QVERIFY(Transaction::canRetryWithNormalAuthentication(77,QProcess::NormalExit,oldReason));
+  QVERIFY(Transaction::canRetryWithNormalAuthentication(77,QProcess::NormalExit,newReason));
+  QVERIFY(!Transaction::canRetryWithNormalAuthentication(1,QProcess::NormalExit,oldReason));
+  QVERIFY(!Transaction::canRetryWithNormalAuthentication(77,QProcess::CrashExit,oldReason));
+  QVERIFY(!Transaction::canRetryWithNormalAuthentication(77,QProcess::NormalExit,QStringLiteral("An untrusted dependency was found.")));
+  if(QFileInfo::exists(QStringLiteral("/var/lib/pacman/db.lck"))) QSKIP("Another pacman transaction is active");
+  QTemporaryDir directory;
+  QVERIFY(directory.isValid());
+  QFile fake(directory.filePath(QStringLiteral("pkexec")));
+  QVERIFY(fake.open(QIODevice::WriteOnly));
+  fake.write("#!/bin/sh\nprintf 'attempt\\n' >> \"$AERO7_TEST_PKEXEC_TRACE\"\n"
+             "printf 'This install would replace or conflict with an existing package; normal authentication is required.\\n' >&2\nexit 77\n");
+  fake.close();
+  QVERIFY(fake.setPermissions(QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
+  const QByteArray previousPath=qgetenv("PATH");
+  const QByteArray previousTrace=qgetenv("AERO7_TEST_PKEXEC_TRACE");
+  const bool traceWasSet=qEnvironmentVariableIsSet("AERO7_TEST_PKEXEC_TRACE");
+  struct RestoreEnvironment {
+   QByteArray path,trace;bool traceWasSet;
+   ~RestoreEnvironment(){qputenv("PATH",path);if(traceWasSet)qputenv("AERO7_TEST_PKEXEC_TRACE",trace);else qunsetenv("AERO7_TEST_PKEXEC_TRACE");}
+  } restore{previousPath,previousTrace,traceWasSet};
+  qputenv("PATH",directory.path().toUtf8()+':'+previousPath);
+  const QString tracePath=directory.filePath(QStringLiteral("attempts"));
+  qputenv("AERO7_TEST_PKEXEC_TRACE",tracePath.toUtf8());
+  Transaction transaction;
+  QSignalSpy retry(&transaction,&Transaction::normalAuthenticationRequired);
+  QSignalSpy finished(&transaction,&Transaction::finished);
+  QVERIFY(transaction.startTrustedInstall(QStringLiteral("extra"),QStringLiteral("gimp")));
+  QVERIFY(retry.wait(3000));
+  QCOMPARE(retry.count(),1);
+  QCOMPARE(finished.count(),0);
+  QFile trace(tracePath);
+  QVERIFY(trace.open(QIODevice::ReadOnly));
+  QCOMPARE(trace.readAll(),QByteArray("attempt\n"));
+  trace.close();
+  QVERIFY(transaction.start(Transaction::Install,{QStringLiteral("extra/gimp")}));
+  QVERIFY(finished.wait(3000));
+  QCOMPARE(retry.count(),1);
+  QVERIFY(trace.open(QIODevice::ReadOnly));
+  QCOMPARE(trace.readAll(),QByteArray("attempt\nattempt\n"));
  }
  void critical(){QVERIFY(isCriticalPackage("pacman"));QVERIFY(isCriticalPackage("linux-zen"));QVERIFY(!isCriticalPackage("vlc"));}
  void sources(){QCOMPARE(friendlyRepository("aero7"),QString("Aero7"));QCOMPARE(friendlyRepository("extra"),QString("Arch Linux"));}

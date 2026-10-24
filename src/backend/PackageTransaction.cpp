@@ -17,6 +17,14 @@ PackageTransaction::PackageTransaction(QObject *p):QObject(p){
  connect(&m_process,qOverload<int,QProcess::ExitStatus>(&QProcess::finished),this,[this](int code,QProcess::ExitStatus s){
   const bool ok=s==QProcess::NormalExit&&code==0;
   const QString details=(m_output+QString::fromUtf8(m_process.readAll())).right(16000);
+  const bool offerNormalAuthentication=m_trustedInstall
+      && canRetryWithNormalAuthentication(code,s,details);
+  m_trustedInstall=false;
+  if(offerNormalAuthentication){
+   m_output.clear();
+   emit normalAuthenticationRequired(details);
+   return;
+  }
   if(ok&&!m_followUpProgram.isEmpty()){
    const QString program=m_followUpProgram;const QStringList arguments=m_followUpArguments;
    m_followUpProgram.clear();m_followUpArguments.clear();
@@ -24,6 +32,12 @@ PackageTransaction::PackageTransaction(QObject *p):QObject(p){
   }
   m_followUpProgram.clear();m_followUpArguments.clear();m_output.clear();emit finished(ok,details);
  });
+}
+bool PackageTransaction::canRetryWithNormalAuthentication(int exitCode,
+    QProcess::ExitStatus status,const QString &details){
+ return status==QProcess::NormalExit && exitCode==77
+     && (details.contains(QStringLiteral("This install would replace or conflict with an existing package; normal authentication is required."))
+         || details.contains(QStringLiteral("A planned package declares a possible replacement or conflict; password-free install is blocked. Normal authentication is required.")));
 }
 bool PackageTransaction::isValidNativeTarget(Operation op, const QString &target){
  static const QRegularExpression name(QStringLiteral("\\A[A-Za-z0-9@._+:-]+\\z"));
@@ -37,6 +51,7 @@ bool PackageTransaction::isValidNativeTarget(Operation op, const QString &target
 bool PackageTransaction::start(Operation op,const QStringList &packages){
  m_startError.clear();
  if(m_process.state()!=QProcess::NotRunning){m_startError=QStringLiteral("A software change is already running.");return false;}
+ m_trustedInstall=false;
  if(QFileInfo::exists(QStringLiteral("/var/lib/pacman/db.lck"))){m_startError=QStringLiteral("Another package transaction is in progress.");return false;}
  if((op==Install || op==Remove) && packages.isEmpty()){
   m_startError=QStringLiteral("No package was selected.");return false;
@@ -59,6 +74,7 @@ bool PackageTransaction::start(Operation op,const QStringList &packages){
 
 bool PackageTransaction::startFlatpak(Operation op,const QString &applicationId,const QString &remote){
  if(m_process.state()!=QProcess::NotRunning||QStandardPaths::findExecutable(QStringLiteral("flatpak")).isEmpty())return false;
+ m_trustedInstall=false;
  static const QRegularExpression valid("^[A-Za-z0-9._-]+$");
  if(!valid.match(applicationId).hasMatch()||!valid.match(remote).hasMatch()||(op!=Install&&op!=Remove))return false;
  QStringList args;
@@ -79,13 +95,21 @@ bool PackageTransaction::startFlatpak(Operation op,const QString &applicationId,
 }
 
 bool PackageTransaction::startTrustedInstall(const QString &repository,const QString &package){
+ m_startError.clear();
  if(m_process.state()!=QProcess::NotRunning||QFileInfo::exists(QStringLiteral("/var/lib/pacman/db.lck")))return false;
+ m_trustedInstall=false;
  static const QRegularExpression validPackage(QStringLiteral("^[A-Za-z0-9@._+-]+$"));
  if(!QStringList{QStringLiteral("aero7"),QStringLiteral("core"),QStringLiteral("extra"),QStringLiteral("multilib")}.contains(repository)
     ||!validPackage.match(package).hasMatch())return false;
  emit progress(QStringLiteral("Checking trusted package…"),0,{});
+ m_trustedInstall=true;
  m_process.start(QStringLiteral("pkexec"),{QStringLiteral("--disable-internal-agent"),
   QStringLiteral("/usr/lib/aero7-programs-center/aero7-programs-center-trusted-installer"),
   repository,package});
- return m_process.waitForStarted(3000);
+ if(!m_process.waitForStarted(3000)){
+  m_trustedInstall=false;
+  m_startError=QStringLiteral("The trusted installer could not start: %1").arg(m_process.errorString());
+  return false;
+ }
+ return true;
 }
