@@ -201,6 +201,9 @@ void MainWindow::buildUi()
     }
     bodyLayout->addWidget(m_sidebar);
     m_pages = new QStackedWidget;
+    // The results table can scroll horizontally. Its header must not impose a
+    // minimum width on the whole window when a font has wider glyph metrics.
+    m_pages->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
     m_home = makeHome();
     m_results = makeListPage();
     m_pages->addWidget(m_home);

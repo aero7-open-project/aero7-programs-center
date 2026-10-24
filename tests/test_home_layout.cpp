@@ -15,6 +15,7 @@
 #include <QStackedWidget>
 #include <QTemporaryDir>
 #include <QToolButton>
+#include <QToolBar>
 #include <QTreeWidget>
 #include <QWheelEvent>
 #include <QtTest>
@@ -51,6 +52,13 @@ private slots:
         QVERIFY(QTest::qWaitForWindowExposed(&window));
         auto *commands = window.findChild<QWidget *>("commandBar");
         QVERIFY(commands);
+        auto *pages = window.findChild<QStackedWidget *>();
+        auto *navigation = window.findChild<QToolBar *>("navigationBar");
+        qInfo() << "Width constraints" << "window" << window.minimumSizeHint()
+                << "navigation" << (navigation ? navigation->minimumSizeHint() : QSize())
+                << "commands" << commands->minimumSizeHint()
+                << "pages" << (pages ? pages->minimumSizeHint() : QSize())
+                << "home" << scroll->minimumSizeHint();
         const auto commandButtons = commands->findChildren<QToolButton *>();
         QCOMPARE(commandButtons.size(), 5);
         QCOMPARE(QStringList({commandButtons.at(0)->text(), commandButtons.at(1)->text(),
